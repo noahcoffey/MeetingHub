@@ -1,0 +1,924 @@
+openapi: 3.0.3
+info:
+  title: Meeting Hub API
+  version: "1.0.0"
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: |
+    Two HTTP surfaces for Meeting Hub:
+
+    - **`/api/v1`** — scoped bearer-token CRUD over tasks, meetings, projects,
+      milestones, and notes. Tokens (`mh_…`) are created under **Settings → API
+      tokens**; each has a scope (`read` / `write`), an optional workspace
+      restriction, and an optional expiry. Use the `bearerAuth` scheme.
+    - **`POST /api/ingest`** — a static-bearer push endpoint for delivering
+      AI-generated meeting notes. Authenticated with the server's
+      `INGEST_API_KEY`. Use the `ingestAuth` scheme.
+
+    All content is partitioned by workspace. Collection endpoints take a
+    `?workspace=<uuid>` query param (optional only for a token restricted to a
+    single workspace). Errors are always `{ "error": "<message>" }`.
+
+servers:
+  - url: https://{host}
+    description: Your self-hosted Meeting Hub instance
+    variables:
+      host:
+        default: your-host.example.com
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Tasks
+    description: Action items — the core unit. Supports recurrence, snooze, and waiting-on.
+  - name: Meetings
+    description: Calendar-sourced or manual meetings, with notes and generated notes.
+  - name: Projects
+    description: Larger initiatives that group meetings and tasks.
+  - name: Milestones
+    description: Named checkpoints within a project, with task-progress counts.
+  - name: Notes
+    description: First-class reference notes, attachable to projects and meetings.
+  - name: Discovery
+    description: Token introspection and workspace listing.
+  - name: Ingest
+    description: The static-bearer push endpoint for AI-generated meeting notes.
+
+paths:
+  /api/v1/me:
+    get:
+      tags: [Discovery]
+      summary: Token introspection
+      operationId: tokenIntrospection
+      description: Returns the calling token's name, prefix, scope, allowed workspaces, and expiry.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenInfo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/workspaces:
+    get:
+      tags: [Discovery]
+      summary: List reachable workspaces
+      operationId: listReachableWorkspaces
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Workspace" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks
+      operationId: listTasks
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+        - name: status
+          in: query
+          description: "`open` (default), `done`, or `scheduled` (snoozed / not-yet-due recurring)."
+          schema:
+            type: string
+            enum: [open, done, scheduled]
+            default: open
+      responses:
+        "200": { $ref: "#/components/responses/TaskList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Tasks]
+      summary: Create a task
+      operationId: createTask
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCreate" }
+      responses:
+        "201": { $ref: "#/components/responses/TaskItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/tasks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Tasks]
+      summary: Get a task
+      operationId: getTask
+      responses:
+        "200": { $ref: "#/components/responses/TaskItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Tasks]
+      summary: Update a task
+      operationId: updateTask
+      description: Partial update. Returns `{ item, next }` — `next` is the spawned recurrence, else `null`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskUpdate" }
+      responses:
+        "200": { $ref: "#/components/responses/TaskItemWithNext" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tasks/{id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [Tasks]
+      summary: Complete a task
+      operationId: completeTask
+      description: Marks the task done. A recurring task returns the spawned next occurrence as `next`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { $ref: "#/components/responses/TaskItemWithNext" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/meetings:
+    get:
+      tags: [Meetings]
+      summary: List meetings
+      operationId: listMeetings
+      description: Summaries only (no note bodies).
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+        - name: from
+          in: query
+          description: Inclusive start date. Defaults to 30 days ago.
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Inclusive end date. Defaults to today.
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/MeetingSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Meetings]
+      summary: Create a meeting
+      operationId: createMeeting
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, startTime]
+              properties:
+                title: { type: string }
+                startTime: { type: string, format: date-time }
+                endTime: { type: string, format: date-time, nullable: true }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Meeting" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/meetings/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Meetings]
+      summary: Get a meeting
+      operationId: getMeeting
+      description: Full row including `notes` and `notesGenerated`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Meeting" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Meetings]
+      summary: Update a meeting
+      operationId: updateMeeting
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                startTime: { type: string, format: date-time }
+                endTime: { type: string, format: date-time, nullable: true }
+                projectId: { type: string, format: uuid, nullable: true }
+                notes: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Meeting" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      summary: List projects
+      operationId: listProjects
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+        - name: includeArchived
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Projects]
+      summary: Create a project
+      operationId: createProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                deadline: { type: string, format: date, nullable: true }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/projects/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Projects]
+      summary: Get a project
+      operationId: getProject
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Project" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Projects]
+      summary: Update a project
+      operationId: updateProject
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                deadline: { type: string, format: date, nullable: true }
+                status: { type: string, enum: [active, archived] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects/{id}/milestones:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Milestones]
+      summary: List a project's milestones
+      operationId: listProjectSMilestones
+      description: Includes task-progress counts.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Milestone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Milestones]
+      summary: Create a milestone
+      operationId: createMilestone
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                dueDate: { type: string, format: date, nullable: true }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Milestone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/milestones/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Milestones]
+      summary: Get a milestone
+      operationId: getMilestone
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Milestone" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Milestones]
+      summary: Update a milestone
+      operationId: updateMilestone
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                dueDate: { type: string, format: date, nullable: true }
+                completed: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Milestone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/notes:
+    get:
+      tags: [Notes]
+      summary: List notes
+      operationId: listNotes
+      description: Summaries (title, attached projects, meeting count).
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/NoteSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Notes]
+      summary: Create a note
+      operationId: createNote
+      description: Same-workspace attach to a project/meeting is allowed at create only.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                body: { type: string }
+                projectId: { type: string, format: uuid }
+                meetingId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/notes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Notes]
+      summary: Get a note
+      operationId: getNote
+      description: Full row; the body is in `notes`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Note" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Notes]
+      summary: Update a note
+      operationId: updateNote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                body: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/ingest:
+    post:
+      tags: [Ingest]
+      summary: Push generated notes
+      operationId: pushGeneratedNotes
+      description: |
+        Delivers AI-generated notes for one meeting. Matched to a meeting by
+        `calendar_event_id` or `external_ref` (writes only if the field is empty),
+        otherwise staged in the review inbox. Idempotent by `sourceId`.
+        Authenticated with the static `INGEST_API_KEY` — **not** an `mh_` token.
+      security:
+        - ingestAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestRequest" }
+      responses:
+        "200":
+          description: Matched to a meeting.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestMatched" }
+        "202":
+          description: No match; queued for review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestPending" }
+        "400":
+          description: Missing or invalid `sourceId` / `notesGenerated`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: Body over the limit (default 5 MB; tune `INGEST_MAX_BODY_KB`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        A scoped API token (`mh_…`) from Settings → API tokens. Read endpoints
+        need any token; write endpoints (POST/PATCH) need a `write`-scoped token.
+    ingestAuth:
+      type: http
+      scheme: bearer
+      description: The server's static `INGEST_API_KEY`. Used only by `POST /api/ingest`.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WorkspaceQuery:
+      name: workspace
+      in: query
+      description: >
+        Target workspace id. Required unless the token is restricted to exactly
+        one workspace (then it defaults to that one).
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed, revoked, or expired token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Write with a read-only token, a disallowed workspace, or a disabled feature.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Row missing or outside the token's workspaces (no existence leak).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Invalid/missing fields, missing `workspace` param, or a cross-workspace reference.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TaskList:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              items:
+                type: array
+                items: { $ref: "#/components/schemas/Task" }
+    TaskItem:
+      description: A single task.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              item: { $ref: "#/components/schemas/Task" }
+    TaskItemWithNext:
+      description: The updated task, plus any spawned recurrence.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              item: { $ref: "#/components/schemas/Task" }
+              next:
+                type: object
+                nullable: true
+                description: The spawned recurrence, or null.
+                allOf:
+                  - { $ref: "#/components/schemas/Task" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    TokenInfo:
+      type: object
+      properties:
+        name: { type: string }
+        prefix: { type: string }
+        scope: { type: string, enum: [read, write] }
+        allWorkspaces: { type: boolean }
+        allowedWorkspaces:
+          type: array
+          items: { $ref: "#/components/schemas/Workspace" }
+        expiresAt: { type: string, format: date-time, nullable: true }
+
+    Workspace:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        isDefault: { type: boolean }
+        sortOrder: { type: integer }
+        disabledFeatures:
+          type: array
+          items: { type: string }
+        icsUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Task:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        content: { type: string }
+        status: { type: string, enum: [open, done] }
+        owner: { type: string, enum: [me, other, unsure] }
+        ownerName: { type: string, nullable: true }
+        waitingOnPersonId: { type: string, format: uuid, nullable: true }
+        dueDate: { type: string, format: date, nullable: true }
+        priority: { type: integer, enum: [1, 2, 3], nullable: true }
+        recurrenceUnit:
+          type: string
+          enum: [day, weekday, week, month, year]
+          nullable: true
+        recurrenceInterval: { type: integer, nullable: true }
+        snoozedUntil: { type: string, format: date, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        projectId: { type: string, format: uuid, nullable: true }
+        milestoneId: { type: string, format: uuid, nullable: true }
+        meetingId: { type: string, format: uuid, nullable: true }
+        journalEntryId: { type: string, format: uuid, nullable: true }
+        source: { type: string, enum: [meeting, manual] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TaskCreate:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+        dueDate: { type: string, format: date, nullable: true }
+        projectId: { type: string, format: uuid, nullable: true }
+        milestoneId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Must belong to the same workspace / project.
+        priority: { type: integer, enum: [1, 2, 3], nullable: true }
+        ownerName:
+          type: string
+          nullable: true
+          description: Marks the task as waiting-on someone.
+        recurrenceUnit:
+          type: string
+          enum: [day, weekday, week, month, year]
+          nullable: true
+        recurrenceInterval: { type: integer, nullable: true }
+        snoozedUntil: { type: string, format: date, nullable: true }
+
+    TaskUpdate:
+      allOf:
+        - $ref: "#/components/schemas/TaskCreate"
+        - type: object
+          properties:
+            content: { type: string }
+            status: { type: string, enum: [open, done] }
+
+    MeetingSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        title: { type: string }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time, nullable: true }
+        projectId: { type: string, format: uuid, nullable: true }
+        source: { type: string, enum: [calendar, manual] }
+
+    Meeting:
+      allOf:
+        - $ref: "#/components/schemas/MeetingSummary"
+        - type: object
+          properties:
+            calendarEventId: { type: string, nullable: true }
+            externalRef: { type: string, nullable: true }
+            description: { type: string, nullable: true }
+            attendees:
+              type: array
+              items:
+                type: object
+                properties:
+                  email: { type: string }
+                  name: { type: string }
+                  responseStatus: { type: string }
+            notes: { type: string }
+            notesUpdatedAt: { type: string, format: date-time }
+            notesGenerated: { type: string, nullable: true }
+            notesGeneratedUpdatedAt: { type: string, format: date-time, nullable: true }
+            skipped: { type: boolean }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, archived] }
+        deadline: { type: string, format: date, nullable: true }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Milestone:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        name: { type: string }
+        dueDate: { type: string, format: date, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        progress:
+          type: object
+          description: Linked-task progress, computed at read time.
+          properties:
+            done: { type: integer }
+            total: { type: integer }
+
+    NoteSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        title: { type: string }
+        projects:
+          type: array
+          items: { type: string }
+        meetingCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    Note:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        title: { type: string }
+        notes:
+          type: string
+          description: The note body.
+        notesUpdatedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    IngestRequest:
+      type: object
+      required: [sourceId, notesGenerated]
+      properties:
+        sourceId:
+          type: string
+          description: >
+            Stable meeting id — the iCal UID for feed events, or the client's own
+            id for client-only meetings. The join key.
+        notesGenerated:
+          type: string
+          description: The generated notes (Markdown recommended).
+        title:
+          type: string
+          description: Only used when the meeting isn't matched yet.
+        startTime:
+          type: string
+          format: date-time
+          description: Only used for the unmatched case.
+        workspace:
+          type: string
+          description: Workspace name hint, matched case-insensitively to route the push.
+
+    IngestMatched:
+      type: object
+      properties:
+        matched: { type: boolean, enum: [true] }
+        meetingId: { type: string, format: uuid }
+        written:
+          type: boolean
+          description: false when the meeting already had generated notes (no-op).
+
+    IngestPending:
+      type: object
+      properties:
+        matched: { type: boolean, enum: [false] }
+        pending: { type: boolean, enum: [true] }
+        pendingId: { type: string, format: uuid }

@@ -1,0 +1,17 @@
+# Local-development Postgres only. The app itself runs via `npm run dev`.
+# Production uses a managed Postgres service in Dokploy (see README).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meetinghub
+      POSTGRES_PASSWORD: meetinghub
+      POSTGRES_DB: meetinghub
+    ports:
+      - "5432:5432"
+    volumes:
+      - meetinghub_pgdata:/var/lib/postgresql/data
+
+volumes:
+  meetinghub_pgdata:
