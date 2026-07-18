@@ -1,0 +1,237 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1782695257532,
+      "tag": "0000_lyrical_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782750947159,
+      "tag": "0001_square_demogoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782751594037,
+      "tag": "0002_friendly_post",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782760576386,
+      "tag": "0003_hot_reptil",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782765779271,
+      "tag": "0004_enable_pg_trgm",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782770504369,
+      "tag": "0005_journal_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782777682765,
+      "tag": "0006_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782824213974,
+      "tag": "0007_action_item_completed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782824214471,
+      "tag": "0008_backfill_completed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782829009753,
+      "tag": "0009_rescale_meta_to_5point",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782997140704,
+      "tag": "0010_grey_amazoness",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783008478005,
+      "tag": "0011_huge_the_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783014887097,
+      "tag": "0012_clammy_justin_hammer",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784053753934,
+      "tag": "0013_black_rocket_racer",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784069346899,
+      "tag": "0014_productive_leech",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784116434338,
+      "tag": "0015_faulty_lockjaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784116449954,
+      "tag": "0016_migrate_project_notes_to_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784117031547,
+      "tag": "0017_closed_siren",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784170050965,
+      "tag": "0018_good_lizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784170478600,
+      "tag": "0019_warm_living_lightning",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784250114988,
+      "tag": "0020_safe_darwin",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784253679000,
+      "tag": "0021_friendly_madripoor",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1784253690583,
+      "tag": "0022_seed_default_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784253862509,
+      "tag": "0023_sleepy_jazinda",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784254718823,
+      "tag": "0024_shallow_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784256129108,
+      "tag": "0025_fair_ultragirl",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784257228859,
+      "tag": "0026_bizarre_randall",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784300680564,
+      "tag": "0027_charming_mephistopheles",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784310833379,
+      "tag": "0028_thankful_eternals",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784380201223,
+      "tag": "0029_charming_mister_fear",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784380251988,
+      "tag": "0030_backfill_journal_stats",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784380360503,
+      "tag": "0031_soft_runaways",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784384088376,
+      "tag": "0032_wakeful_lethal_legion",
+      "breakpoints": true
+    }
+  ]
+}

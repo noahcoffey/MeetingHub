@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid Dependabot rebases).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run build
+        env:
+          # Dummy values — the build doesn't connect to the DB (lazy client) or use
+          # real secrets; these just satisfy env reads during `next build`.
+          AUTH_SECRET: ci-build-not-a-real-secret
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+          INGEST_API_KEY: ci
+
+  unit:
+    name: unit tests (Vitest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: meetinghub
+          POSTGRES_PASSWORD: meetinghub
+          POSTGRES_DB: meetinghub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meetinghub"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # global-setup creates + migrates meetinghub_test against this service.
+      # Runs the suite with coverage; the thresholds in vitest.config gate it.
+      - run: npm run coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  e2e:
+    name: e2e (Playwright)
+    runs-on: ubuntu-latest
+    # The expensive job (Postgres + a real browser): don't spin it up until the
+    # cheap typecheck/lint/build passes. unit tests still run in parallel.
+    needs: verify
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: meetinghub
+          POSTGRES_PASSWORD: meetinghub
+          POSTGRES_DB: meetinghub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meetinghub"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # setup-db creates/migrates/seeds meetinghub_e2e, then Playwright boots
+      # `next dev` on :3100 against it and drives the token UI flow.
+      - run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
