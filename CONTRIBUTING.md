@@ -4,29 +4,13 @@ Thanks for your interest in improving Meeting Hub! This is a self-hosted, single
 web app for meeting notes and action items. Contributions of all sizes are welcome —
 bug reports, docs, and code.
 
-## Scope
-
-Meeting Hub is intentionally focused. Before proposing a feature, note what is **out of
-scope** by design (these will generally be declined):
-
-- AI synthesis / digest generation inside the app (pushing AI notes in via the ingest API is supported; *generating* them here is not)
-- Multi-user, sharing, or collaboration
-- Semantic / vector search
-- Bidirectional links / graph views
-- A general task-manager migration
-
-The schema is designed so future additions stay additive, but the product stays single-user
-and self-hosted. If you're unsure whether an idea fits, open an issue to discuss it before
-writing code.
-
 ## Ways to contribute
 
 - **Report a bug** — open a [GitHub issue](https://github.com/noahcoffey/MeetingHub/issues)
   with steps to reproduce, expected vs. actual behavior, and your environment.
 - **Report a security vulnerability** — **do not open a public issue.** Follow the process
   in [`SECURITY.md`](./SECURITY.md) (GitHub's private vulnerability reporting).
-- **Suggest a feature** — open an issue first so we can confirm it fits the scope above
-  before you invest time.
+- **Suggest a feature** — open an issue to discuss it before you invest time in a PR.
 - **Submit a fix or improvement** — see the workflow below.
 
 ## Development setup
