@@ -57,7 +57,6 @@ export default async function ReportsPage({
   const days = RANGES.includes(Number(daysParam)) ? Number(daysParam) : 30;
   const end = todayInAppTz();
   const start = shiftDate(end, -(days - 1));
-  const startInstant = startOfDayUtc(start).getTime();
 
   const workspace = await getActiveWorkspace();
   if (!isFeatureEnabled(workspace, "reports")) redirect("/");
@@ -145,27 +144,8 @@ export default async function ReportsPage({
     meetingCount++;
   }
 
-  // Per-day task counts + baseline of tasks already open before the range.
-  const createdByDay = new Map<string, number>();
-  const completedByDay = new Map<string, number>();
-  let baselineOpen = 0;
-  for (const t of taskTimes) {
-    const created = new Date(t.createdAt);
-    const cDay = formatDateInTz(created, APP_TIMEZONE);
-    createdByDay.set(cDay, (createdByDay.get(cDay) ?? 0) + 1);
-    const completed = t.completedAt ? new Date(t.completedAt) : null;
-    if (completed) {
-      const compDay = formatDateInTz(completed, APP_TIMEZONE);
-      completedByDay.set(compDay, (completedByDay.get(compDay) ?? 0) + 1);
-    }
-    const createdBeforeStart = created.getTime() < startInstant;
-    const completedBeforeStart =
-      completed != null && completed.getTime() < startInstant;
-    if (createdBeforeStart && !completedBeforeStart) baselineOpen++;
-  }
-
-  // Build the per-day series. Tasks: open backlog at end of each day, split into
-  // "carried over" (created before the range) and "new" (created within it).
+  // Build the per-day series. Tasks: open backlog at end of each day, with the
+  // tasks created that day as the highlighted top band.
   const load: Point[] = [];
   const taskStack: StackPoint[] = [];
   for (let i = 0; i < days; i++) {
@@ -176,19 +156,20 @@ export default async function ReportsPage({
       load.push({ date, value: Math.round((loadByDay.get(date) ?? 0) * 10) / 10 });
     }
 
-    const endInstant = startOfDayUtc(shiftDate(date, 1)).getTime();
+    const dayStart = startOfDayUtc(date).getTime();
+    const dayEnd = startOfDayUtc(shiftDate(date, 1)).getTime();
     let total = 0;
-    let fresh = 0;
+    let added = 0;
     for (const t of taskTimes) {
       const created = new Date(t.createdAt).getTime();
       const done = t.completedAt ? new Date(t.completedAt).getTime() : null;
-      const open = created < endInstant && (done == null || done >= endInstant);
+      const open = created < dayEnd && (done == null || done >= dayEnd);
       if (open) {
         total++;
-        if (created >= startInstant) fresh++;
+        if (created >= dayStart) added++;
       }
     }
-    taskStack.push({ date, carried: total - fresh, total });
+    taskStack.push({ date, added, total });
   }
 
   const nums = (pts: Point[]) =>
@@ -197,7 +178,7 @@ export default async function ReportsPage({
   // Whole-hour ceiling so the y-scale label reads as a clean "Nh".
   const loadMax = Math.max(1, Math.ceil(Math.max(0, ...nums(load))));
   const openNow = taskStack[taskStack.length - 1]?.total ?? 0;
-  const newNow = openNow - (taskStack[taskStack.length - 1]?.carried ?? 0);
+  const addedToday = taskStack[taskStack.length - 1]?.added ?? 0;
   const taskMax = Math.max(1, ...taskStack.map((p) => p.total));
 
   // Reflection (text) stats, newest day first.
@@ -313,13 +294,13 @@ export default async function ReportsPage({
             <h2>Open tasks</h2>
             <span className="report-avg">
               now {openNow}
-              {openNow > 0 ? ` · ${newNow} new` : ""}
+              {addedToday > 0 ? ` · ${addedToday} new today` : ""}
             </span>
           </div>
           <div className="stack-legend">
-            <span className="legend-chip-static sa-new-swatch">New</span>
-            <span className="legend-chip-static sa-carried-swatch">
-              Carried over
+            <span className="legend-chip-static sa-open-swatch">Open</span>
+            <span className="legend-chip-static sa-added-swatch">
+              New that day
             </span>
           </div>
           <StackedAreaChart days={taskStack} max={taskMax} />
