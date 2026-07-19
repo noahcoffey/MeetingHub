@@ -424,13 +424,13 @@ button {
   height: 100%;
   overflow: visible;
 }
-.sa-carried {
-  fill: #7c6cf0;
-  opacity: 0.32;
-}
-.sa-new {
+.sa-open {
   fill: #3fa66a;
-  opacity: 0.45;
+  opacity: 0.28;
+}
+.sa-added {
+  fill: #7c6cf0;
+  opacity: 0.55;
 }
 .sa-line {
   stroke: #3fa66a;
@@ -457,10 +457,10 @@ button {
   border-radius: 3px;
   background: var(--swatch, var(--accent));
 }
-.sa-new-swatch {
+.sa-open-swatch {
   --swatch: #3fa66a;
 }
-.sa-carried-swatch {
+.sa-added-swatch {
   --swatch: #7c6cf0;
 }
 .report-digest {
