@@ -101,6 +101,10 @@ export function CalendarsManager({
               ))}
             </ul>
           )}
+          {/* Full-page navigation into the OAuth 302 — must be a plain <a>, not
+              <Link>. The rule only started matching this href once /api gained
+              a dynamic segment (the MCP [transport] route). */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a className="primary-btn account-connect" href="/api/calendar/google/connect">
             Connect a Google account
           </a>

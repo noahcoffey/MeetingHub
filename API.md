@@ -5,6 +5,11 @@ Programmatic access to tasks, meetings, projects, milestones, and notes via
 **Settings → API tokens** (the note-ingest push contract is separate — see
 `INGEST_API.md`).
 
+Prefer tools over raw HTTP? The same surface is exposed as a remote **MCP
+server** at `/api/mcp` (streamable HTTP + OAuth) — see the "MCP connector"
+section in `README.md`. MCP tool calls are proxied through these v1 endpoints,
+so everything below (scopes, workspace rules, error shapes) applies there too.
+
 > A machine-readable **OpenAPI 3.0** spec covering this API (and the ingest
 > endpoint) lives at [`openapi.yaml`](public/openapi.yaml) — import it into
 > Postman/Insomnia or render it with Swagger UI / Redoc.

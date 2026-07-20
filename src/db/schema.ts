@@ -222,6 +222,48 @@ export const apiTokens = pgTable(
   (t) => [uniqueIndex("api_tokens_token_hash_idx").on(t.tokenHash)],
 );
 
+// ---- OAuth (MCP connector) ----
+// Minimal OAuth 2.1 authorization server backing the /api/mcp connector
+// endpoint (claude.ai custom connectors only speak OAuth, not raw bearer
+// tokens). Dynamically registered public clients (PKCE, no secret) and
+// short-lived single-use authorization codes. Approved grants become ordinary
+// api_tokens rows, so revocation lives in Settings -> API tokens.
+export const oauthClients = pgTable("oauth_clients", {
+  // The id doubles as the public client_id.
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const oauthCodes = pgTable(
+  "oauth_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Hex SHA-256 of the code; the plaintext only travels in the redirect.
+    codeHash: text("code_hash").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    // PKCE S256 challenge from the authorize request.
+    codeChallenge: text("code_challenge").notNull(),
+    // Consent choices, copied onto the minted api_token at redemption.
+    scope: apiTokenScopeEnum("scope").notNull(),
+    workspaceIds: jsonb("workspace_ids").$type<string[] | null>().default(null),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("oauth_codes_code_hash_idx").on(t.codeHash)],
+);
+
 // ---- projects ----
 // A larger initiative that meetings/action items can be grouped under.
 export const projects = pgTable(
@@ -731,6 +773,7 @@ export const taskDependencies = pgTable(
 );
 
 // ---- inferred types ----
+export type OauthClient = typeof oauthClients.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type TaskDependency = typeof taskDependencies.$inferSelect;
 export type User = typeof users.$inferSelect;

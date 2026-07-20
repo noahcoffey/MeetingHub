@@ -16,7 +16,13 @@ export const AUTH_CHALLENGE_COOKIE = "mh-auth-challenge";
 
 // Relying-party id (domain, no port) + full origin, derived from the request so it
 // works across localhost and the deployed domain without extra config.
-export function rpInfo(request: Request): { rpID: string; origin: string } {
+// Structural param ({ headers }) rather than Request: mcp-handler globally
+// augments Request with an `auth` field that conflicts with NextAuthRequest,
+// so typing these against Request would reject next-auth wrapped handlers.
+export function rpInfo(request: { headers: Headers }): {
+  rpID: string;
+  origin: string;
+} {
   const host = request.headers.get("host") ?? "localhost:3000";
   const proto =
     request.headers.get("x-forwarded-proto") ??
@@ -27,7 +33,10 @@ export function rpInfo(request: Request): { rpID: string; origin: string } {
 }
 
 // Read a cookie from a raw Request (used in the Credentials authorize()).
-export function readCookie(request: Request, name: string): string | null {
+export function readCookie(
+  request: { headers: Headers },
+  name: string,
+): string | null {
   const header = request.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
