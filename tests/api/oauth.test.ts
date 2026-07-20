@@ -87,6 +87,24 @@ describe("dynamic client registration", () => {
     expect(bad.json.error).toBe("invalid_redirect_uri");
   });
 
+  it("rate-limits repeated registrations from one IP", async () => {
+    const post = () =>
+      register(
+        new Request("http://test.local/api/oauth/register", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            // Distinct spoofed client IP so this test's bucket is its own.
+            "x-forwarded-for": "203.0.113.99, 10.0.0.1",
+          },
+          body: JSON.stringify({ redirect_uris: [REDIRECT] }),
+        }),
+      );
+    let last = 0;
+    for (let i = 0; i < 11; i++) last = (await post()).status;
+    expect(last).toBe(429);
+  });
+
   it("rejects missing or empty redirect_uris", async () => {
     const res = await call(register, {
       method: "POST",

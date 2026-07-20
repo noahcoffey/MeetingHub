@@ -1,6 +1,6 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { verifyApiToken } from "@/lib/api-tokens";
-import { registerTools } from "./tools";
+import { registerTools } from "@/lib/mcp-tools";
 
 // MCP endpoint (streamable HTTP, stateless) at /api/mcp — the URL to paste
 // into claude.ai -> Settings -> Connectors -> "Add custom connector". Auth is

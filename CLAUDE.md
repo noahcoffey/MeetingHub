@@ -208,7 +208,7 @@ contract for the client side: `INGEST_API.md`.
 
 `/api/mcp` (`src/app/api/[transport]/route.ts`, mcp-handler, streamable HTTP, stateless — SSE
 disabled) is a remote MCP server for claude.ai custom connectors and other MCP clients. Every tool
-in `tools.ts` is a thin in-process proxy over the matching `/api/v1` route handler (invoked like
+in `lib/mcp-tools.ts` is a thin in-process proxy over the matching `/api/v1` route handler (invoked like
 `tests/helpers.ts` does), forwarding the caller's bearer — auth/scope/workspace/feature enforcement
 stays in the v1 layer. Auth is OAuth 2.1 (required by claude.ai): a minimal built-in authorization
 server — discovery under `src/app/.well-known/`, DCR at `/api/oauth/register` (public clients,

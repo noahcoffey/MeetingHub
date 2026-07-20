@@ -36,6 +36,33 @@ export function isAllowedRedirectUri(uri: string): boolean {
   );
 }
 
+// In-memory throttle for the open (unauthenticated) registration endpoint so
+// it can't be used to spam oauth_clients rows. Same single-user/single-
+// container rationale as lib/login-throttle: state resetting on restart is
+// fine. Registration is a once-per-connector event, so the caps are tiny.
+const REG_WINDOW_MS = 60 * 60_000;
+const REG_MAX_PER_IP = 10;
+const REG_MAX_GLOBAL = 50;
+const regBuckets = new Map<string, { count: number; windowStart: number }>();
+
+export function registrationRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const take = (key: string, max: number): boolean => {
+    const b = regBuckets.get(key) ?? { count: 0, windowStart: now };
+    if (now - b.windowStart > REG_WINDOW_MS) {
+      b.count = 0;
+      b.windowStart = now;
+    }
+    b.count += 1;
+    regBuckets.set(key, b);
+    return b.count > max;
+  };
+  // Evaluate both so the global backstop counts IP-rotating attempts too.
+  const ipLimited = take(ip, REG_MAX_PER_IP);
+  const globalLimited = take("__global__", REG_MAX_GLOBAL);
+  return ipLimited || globalLimited;
+}
+
 export async function registerOauthClient(input: {
   name: string;
   redirectUris: string[];

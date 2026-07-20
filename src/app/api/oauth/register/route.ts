@@ -1,5 +1,10 @@
-import { isAllowedRedirectUri, registerOauthClient } from "@/lib/oauth";
+import {
+  isAllowedRedirectUri,
+  registerOauthClient,
+  registrationRateLimited,
+} from "@/lib/oauth";
 import { corsPreflight, oauthJson } from "@/lib/oauth-http";
+import { ipFromHeaders } from "@/lib/login-throttle";
 
 // RFC 7591 dynamic client registration, open (no initial access token) —
 // standard for MCP servers: registering a client grants nothing until the
@@ -10,6 +15,9 @@ export const dynamic = "force-dynamic";
 const MAX_REDIRECT_URIS = 10;
 
 export async function POST(req: Request): Promise<Response> {
+  if (registrationRateLimited(ipFromHeaders(req.headers))) {
+    return oauthJson({ error: "rate_limited" }, { status: 429 });
+  }
   let body: unknown;
   try {
     body = await req.json();
