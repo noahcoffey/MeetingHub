@@ -219,10 +219,12 @@ and re-register passkeys.
 
 ## APIs
 
-Two HTTP surfaces, documented separately:
+Three HTTP surfaces, documented separately:
 
 - **`/api/v1`** — scoped bearer-token CRUD over tasks, meetings, projects, milestones, and notes.
   Tokens are created under **Settings → API tokens**. See [`API.md`](API.md).
+- **`/api/mcp`** — a remote **MCP server** exposing the same surface as typed tools, for AI clients
+  like claude.ai custom connectors. See [MCP connector](#mcp-connector-claudeai) below.
 - **`POST /api/ingest`** — a static-bearer push endpoint for an external tool (e.g. a meeting
   recorder/transcriber) to deliver AI-generated notes, matched to a meeting by `calendar_event_id`
   or staged for review. See [`INGEST_API.md`](INGEST_API.md).
@@ -233,3 +235,21 @@ API tokens and the Incoming notes screen. The spec ([`public/openapi.yaml`](publ
 be imported into Postman/Insomnia, rendered with Swagger UI or Redoc (`npx @redocly/cli preview-docs
 public/openapi.yaml`), or used to generate a client. The endpoints themselves stay token-gated — only
 the docs are public.
+
+## MCP connector (claude.ai)
+
+The app is a **remote MCP server** (streamable HTTP, OAuth 2.1) so AI clients can read and write
+your data with your approval. To connect claude.ai:
+
+1. In claude.ai go to **Settings → Connectors → Add custom connector**.
+2. Enter `https://<your-host>/api/mcp` as the server URL — leave the OAuth client ID/secret blank
+   (the app supports dynamic client registration).
+3. Claude opens the app's consent screen (sign in if needed). Pick an access level — **read only**
+   or **read & write** — and optionally restrict to specific workspaces, then **Approve**.
+
+Approving mints a normal API token (visible and revocable under **Settings → API tokens**, named
+after the connecting app); the MCP tools proxy the `/api/v1` surface, so scope and workspace
+restrictions are enforced identically. Disconnect by deleting the token or removing the connector.
+
+Any MCP client that speaks streamable HTTP + OAuth (Claude Code, MCP Inspector, …) works the same
+way; loopback `http://localhost` redirect URIs are accepted for local tooling.

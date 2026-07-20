@@ -232,6 +232,13 @@
       "when": 1784384088376,
       "tag": "0032_wakeful_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784506571224,
+      "tag": "0033_old_eddie_brock",
+      "breakpoints": true
     }
   ]
 }

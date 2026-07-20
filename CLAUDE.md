@@ -204,6 +204,23 @@ create-new uses the tag, falling back to the active workspace for untagged items
 inbox/badge stays global. Generated notes render in a collapsible, editable section below the meeting notes. Full
 contract for the client side: `INGEST_API.md`.
 
+## MCP connector
+
+`/api/mcp` (`src/app/api/[transport]/route.ts`, mcp-handler, streamable HTTP, stateless — SSE
+disabled) is a remote MCP server for claude.ai custom connectors and other MCP clients. Every tool
+in `tools.ts` is a thin in-process proxy over the matching `/api/v1` route handler (invoked like
+`tests/helpers.ts` does), forwarding the caller's bearer — auth/scope/workspace/feature enforcement
+stays in the v1 layer. Auth is OAuth 2.1 (required by claude.ai): a minimal built-in authorization
+server — discovery under `src/app/.well-known/`, DCR at `/api/oauth/register` (public clients,
+PKCE S256 only), consent at `/oauth/authorize` (session-gated page; approval is a server action
+returning the redirect URL so the CSP's `form-action 'self'` isn't tripped), token exchange at
+`/api/oauth/token`. Clients/codes live in `oauth_clients`/`oauth_codes` (`lib/oauth.ts`; codes are
+single-use — burned even on a failed exchange). A successful exchange mints a regular `api_tokens`
+row named after the client, so **Settings → API tokens is the revocation surface**. The MCP + OAuth
+endpoints and `.well-known` are excluded from the middleware matcher; the consent page deliberately
+is not. Watch out: mcp-handler globally augments `Request` with `auth`, which is why
+`lib/webauthn.ts` types request params structurally (`{ headers: Headers }`).
+
 ## Out of scope (do not build)
 
 AI synthesis/digests (note ingest is built; *generating* notes here is not), task-manager migration,

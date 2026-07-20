@@ -51,7 +51,11 @@ test("create, use, and revoke an API token from Settings", async ({ page }) => {
   });
 
   await test.step("revoking it stops the secret working", async () => {
-    await page.getByRole("button", { name: "Revoke" }).click();
+    // Scope to this test's row — connector-minted tokens may also be listed.
+    await page
+      .locator(".sec-item", { hasText: "E2E Token" })
+      .getByRole("button", { name: "Revoke" })
+      .click();
     // The list removes the row optimistically, so wait for the server DELETE to
     // land before checking the token — otherwise the re-check races the delete.
     const deleted = page.waitForResponse(

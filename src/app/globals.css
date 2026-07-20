@@ -975,6 +975,42 @@ input[type="checkbox"]:focus-visible {
   color: var(--danger);
 }
 
+/* oauth consent (MCP connector) */
+.consent-card {
+  max-width: 420px;
+}
+.consent-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+}
+.consent-group legend {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 0 0.3rem;
+}
+.consent-option {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.consent-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+.consent-deny {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 /* settings → security */
 .security {
   display: flex;

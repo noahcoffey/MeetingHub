@@ -11,6 +11,8 @@ import { TEST_USER_ID } from "./constants";
 // one global table with an FK into workspaces, so it's listed here too. The
 // seeded user (+ its passkeys/recovery codes) and app_settings survive.
 const CONTENT_TABLES = [
+  "oauth_codes",
+  "oauth_clients",
   "api_tokens",
   "task_dependencies",
   "action_items",

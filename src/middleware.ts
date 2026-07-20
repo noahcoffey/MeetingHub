@@ -71,11 +71,14 @@ export default auth((req) => {
 });
 
 // Protect everything except NextAuth's own routes, the public health check,
-// the bearer-only ingest + v1 API endpoints, the public API docs
-// (openapi.yaml + api-docs.html — no secrets, and served CSP-free so the
-// self-contained page's inline scripts run), and Next static assets.
+// the bearer-only ingest + v1 + MCP API endpoints, the OAuth token/register
+// endpoints + discovery metadata (cross-origin by design; the consent page
+// /oauth/authorize deliberately stays INSIDE the matcher so it's
+// session-gated), the public API docs (openapi.yaml + api-docs.html — no
+// secrets, and served CSP-free so the self-contained page's inline scripts
+// run), and Next static assets.
 export const config = {
   matcher: [
-    "/((?!api/auth|api/health|api/ingest|api/v1|api/webauthn/authenticate|openapi.yaml|api-docs.html|_next/static|_next/image|favicon.ico|icon|apple-icon).*)",
+    "/((?!api/auth|api/health|api/ingest|api/v1|api/mcp|api/oauth|api/webauthn/authenticate|.well-known|openapi.yaml|api-docs.html|_next/static|_next/image|favicon.ico|icon|apple-icon).*)",
   ],
 };
