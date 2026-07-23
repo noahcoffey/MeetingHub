@@ -1,6 +1,7 @@
 import "server-only";
 import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { tryRenameDriveFolder } from "@/lib/drive";
 import { seedDefaultStats } from "@/lib/journal-stats";
 import {
   actionItems,
@@ -80,6 +81,11 @@ export async function updateWorkspace(
     .set({ ...input, updatedAt: new Date() })
     .where(eq(workspaces.id, id))
     .returning();
+  // Best-effort: keep the workspace's Drive folder name in sync (no-op when
+  // Drive isn't connected or no folder exists; never fails the update).
+  if (w && input.name !== undefined) {
+    await tryRenameDriveFolder(w.driveFolderId, w.name, { workspaceId: w.id });
+  }
   return w;
 }
 

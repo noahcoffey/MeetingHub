@@ -26,6 +26,7 @@ const FEATURE_LABELS: Record<WorkspaceFeature, string> = {
   notes: "Notes",
   journal: "Journal",
   reports: "Reports",
+  files: "Files",
 };
 
 type Counts = {

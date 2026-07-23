@@ -75,6 +75,7 @@ export const WORKSPACE_FEATURES = [
   "notes",
   "journal",
   "reports",
+  "files",
 ] as const;
 export type WorkspaceFeature = (typeof WORKSPACE_FEATURES)[number];
 
@@ -101,6 +102,14 @@ export const workspaces = pgTable(
       { onDelete: "set null" },
     ),
     googleCalendarId: text("google_calendar_id"),
+    // Google Drive folder ids for this workspace's subtree under the app's
+    // root MeetingHub folder (see lib/drive.ts). All lazily created on first
+    // use and self-healing: if a stored id turns out trashed/deleted, it's
+    // nulled and the folder is recreated. Never user-editable.
+    driveFolderId: text("drive_folder_id"),
+    driveFilesFolderId: text("drive_files_folder_id"),
+    driveProjectsFolderId: text("drive_projects_folder_id"),
+    driveArchivedFolderId: text("drive_archived_folder_id"),
     // Feature toggles, stored as the DISABLED set so new features default on
     // everywhere (an empty list = full app). Keys: WorkspaceFeature below.
     disabledFeatures: jsonb("disabled_features")
@@ -282,6 +291,9 @@ export const projects = pgTable(
     status: projectStatusEnum("status").notNull().default("active"),
     // Set when status -> archived (cleared if reactivated); mirrors action_items.completedAt.
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // This project's Google Drive folder (under <workspace>/Projects/), lazily
+    // created on first Files-tab use; moved to Projects/_archived on delete.
+    driveFolderId: text("drive_folder_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

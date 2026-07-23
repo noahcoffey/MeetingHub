@@ -10,6 +10,7 @@ const links = [
   { href: "/settings/incoming", label: "Incoming notes" },
   { href: "/settings/journal-stats", label: "Journal stats" },
   { href: "/settings/calendars", label: "Calendars" },
+  { href: "/settings/drive", label: "Drive files" },
   { href: "/settings/security", label: "Security" },
   { href: "/settings/tokens", label: "API tokens" },
   { href: "/settings/workspaces", label: "Workspaces" },
