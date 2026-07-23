@@ -27,7 +27,8 @@ import { ProjectMilestones } from "../project-milestones";
 import { ProjectTimeline } from "../project-timeline";
 import { ProjectLog, type LogFutureNode } from "./project-log";
 import { detectLinkType, LINK_TYPE_LABEL } from "@/lib/link-type";
-import { LinkTypeIcon } from "../link-icon";
+import { LinkFavicon } from "../link-favicon";
+import { AddLinkButton } from "../add-link-button";
 import { NewNoteButton } from "../../notes/new-note-button";
 import { FileBrowser } from "../../files/file-browser";
 import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
@@ -435,10 +436,14 @@ export default async function ProjectDetailPage({
               )}
             </section>
 
+          </div>
+
+          <div className="hub-overview-col">
             <section className="hub-card">
               <div className="hub-card-head">
                 <h2>Links</h2>
                 {links.length > 0 && <span className="count">{links.length}</span>}
+                <AddLinkButton projectId={project.id} />
               </div>
               {links.length === 0 ? (
                 <p className="muted empty-sm">No links saved yet.</p>
@@ -456,7 +461,7 @@ export default async function ProjectDetailPage({
                           title={LINK_TYPE_LABEL[type]}
                         >
                           <span className="link-icon">
-                            <LinkTypeIcon type={type} />
+                            <LinkFavicon url={l.url} />
                           </span>
                           <span className="link-text">{l.label || l.url}</span>
                         </a>
@@ -466,18 +471,18 @@ export default async function ProjectDetailPage({
                 </ul>
               )}
             </section>
-          </div>
 
-          <section className="hub-card hub-log-card">
-            <div className="hub-card-head">
-              <h2>Project log</h2>
-            </div>
-            <ProjectLog
-              future={futureNodes}
-              entries={logEntries}
-              todayLabel={formatShortDateStr(today)}
-            />
-          </section>
+            <section className="hub-card hub-log-card">
+              <div className="hub-card-head">
+                <h2>Project log</h2>
+              </div>
+              <ProjectLog
+                future={futureNodes}
+                entries={logEntries}
+                todayLabel={formatShortDateStr(today)}
+              />
+            </section>
+          </div>
         </div>
       )}
 

@@ -6465,3 +6465,13 @@ button.file-name-folder:hover {
     opacity: 1;
   }
 }
+
+/* saved-link favicons (proxied via /api/favicon; glyph fallback on error) */
+.link-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+  display: block;
+  margin: 1px;
+}

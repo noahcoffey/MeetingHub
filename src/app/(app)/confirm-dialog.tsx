@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 // Shared overlay for the app's small modals. Mirrors the command-palette /
 // keyboard-shortcut modals: Escape closes, click outside closes, the card
 // stops propagation so inner clicks don't dismiss.
-function Overlay({
+export function Overlay({
   onClose,
   children,
 }: {
