@@ -6292,3 +6292,186 @@ a.primary-btn {
   outline: none;
   border-color: var(--border-strong);
 }
+
+/* ---- Drive file browser (/files page + project hub Files tab) ---- */
+.file-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.file-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.file-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.file-crumb {
+  background: transparent;
+  border: none;
+  padding: 0.15rem 0.3rem;
+  border-radius: 5px;
+  font-size: 0.88rem;
+  color: var(--muted);
+  cursor: pointer;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-crumb:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface);
+}
+.file-crumb.is-current {
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+.file-crumb-seg {
+  display: inline-flex;
+  align-items: center;
+}
+.file-crumb-sep {
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+.file-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.file-upload-note {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+.file-newfolder-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 28rem;
+}
+.file-newfolder-form input {
+  flex: 1;
+  min-width: 0;
+}
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border);
+}
+.file-row:last-child {
+  border-bottom: none;
+}
+.file-row:hover {
+  background: var(--surface);
+}
+.file-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+.file-icon.is-folder {
+  color: var(--accent, var(--text));
+}
+.file-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-align: left;
+}
+button.file-name-folder {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 550;
+}
+button.file-name-folder:hover {
+  text-decoration: underline;
+}
+.file-rename-form {
+  flex: 1;
+  min-width: 0;
+}
+.file-rename-form input {
+  width: 100%;
+}
+.file-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  gap: 0.8rem;
+  font-size: 0.76rem;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.file-size {
+  min-width: 4rem;
+  text-align: right;
+}
+.file-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.file-row:hover .file-actions,
+.file-row:focus-within .file-actions {
+  opacity: 1;
+}
+.file-browser-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 34rem;
+}
+@media (max-width: 700px) {
+  .file-meta {
+    display: none;
+  }
+  .file-actions {
+    opacity: 1;
+  }
+}
+
+/* saved-link favicons (proxied via /api/favicon; glyph fallback on error) */
+.link-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+  display: block;
+  margin: 1px;
+}

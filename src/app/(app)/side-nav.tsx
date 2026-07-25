@@ -94,6 +94,23 @@ const items: NavItem[] = [
     ),
   },
   {
+    href: "/files",
+    label: "Files",
+    feature: "files",
+    match: (p: string) => p.startsWith("/files"),
+    icon: (
+      <>
+        <path
+          d="M5.5 3.5h6L15 7v9a.9.9 0 01-.9.9H5.5a.9.9 0 01-.9-.9v-11a.9.9 0 01.9-.9z"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path d="M11.5 3.5V7H15" strokeWidth="1.5" strokeLinejoin="round" />
+        <path d="M7.5 11h5M7.5 13.5h3" strokeWidth="1.4" strokeLinecap="round" />
+      </>
+    ),
+  },
+  {
     href: "/journal",
     label: "Journal",
     feature: "journal",

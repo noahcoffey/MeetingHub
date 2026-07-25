@@ -4,8 +4,21 @@ import { startOfDayUtc, shiftDate } from "./dates";
 import { upsertCalendarMeetings, type CalendarUpsert } from "./meetings";
 import { IMPORT_RANGE_DAYS } from "./ics-calendar";
 
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
+import {
+  accessTokenFromRefresh,
+  buildAuthUrl,
+  exchangeCode as exchangeCodeForUri,
+  timedFetch,
+} from "./google-auth";
+
+// Shared OAuth plumbing lives in google-auth.ts; this module keeps the
+// calendar-flavored surface its routes were built against.
+export {
+  googleConfigured,
+  fetchUserEmail,
+  GoogleNotConfiguredError,
+} from "./google-auth";
+
 const CAL_API = "https://www.googleapis.com/calendar/v3";
 // openid+email identifies the account; calendar.readonly is the only data scope.
 export const GOOGLE_SCOPES = [
@@ -13,38 +26,6 @@ export const GOOGLE_SCOPES = [
   "email",
   "https://www.googleapis.com/auth/calendar.readonly",
 ].join(" ");
-
-const FETCH_TIMEOUT_MS = 15_000;
-
-export class GoogleNotConfiguredError extends Error {
-  constructor() {
-    super("Google OAuth is not configured");
-    this.name = "GoogleNotConfiguredError";
-  }
-}
-
-export function googleConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
-  );
-}
-
-function clientCreds(): { id: string; secret: string } {
-  const id = process.env.GOOGLE_CLIENT_ID;
-  const secret = process.env.GOOGLE_CLIENT_SECRET;
-  if (!id || !secret) throw new GoogleNotConfiguredError();
-  return { id, secret };
-}
-
-async function timedFetch(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 // The redirect URI must exactly match one registered in the Google Cloud console.
 export function redirectUri(origin: string): string {
@@ -54,21 +35,12 @@ export function redirectUri(origin: string): string {
   );
 }
 
-// Build the consent URL. access_type=offline + prompt=consent forces a refresh
-// token even on re-consent.
 export function authUrl(origin: string, state: string): string {
-  const { id } = clientCreds();
-  const params = new URLSearchParams({
-    client_id: id,
-    redirect_uri: redirectUri(origin),
-    response_type: "code",
+  return buildAuthUrl({
     scope: GOOGLE_SCOPES,
-    access_type: "offline",
-    prompt: "consent",
-    include_granted_scopes: "true",
+    redirectUri: redirectUri(origin),
     state,
   });
-  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
 // Exchange an authorization code for tokens. Returns the refresh token + scope.
@@ -76,62 +48,8 @@ export async function exchangeCode(
   code: string,
   origin: string,
 ): Promise<{ refreshToken: string; accessToken: string; scope: string }> {
-  const { id, secret } = clientCreds();
-  const res = await timedFetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: id,
-      client_secret: secret,
-      redirect_uri: redirectUri(origin),
-      grant_type: "authorization_code",
-    }),
-  });
-  if (!res.ok) throw new Error("google code exchange failed");
-  const json = (await res.json()) as {
-    refresh_token?: string;
-    access_token?: string;
-    scope?: string;
-  };
-  if (!json.refresh_token || !json.access_token) {
-    // No refresh token means the account was already consented without offline
-    // access — the caller should tell the user to remove app access & retry.
-    throw new Error("google did not return a refresh token");
-  }
-  return {
-    refreshToken: json.refresh_token,
-    accessToken: json.access_token,
-    scope: json.scope ?? GOOGLE_SCOPES,
-  };
-}
-
-export async function fetchUserEmail(accessToken: string): Promise<string> {
-  const res = await timedFetch(USERINFO_URL, {
-    headers: { authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) throw new Error("google userinfo failed");
-  const json = (await res.json()) as { email?: string };
-  if (!json.email) throw new Error("google account has no email");
-  return json.email.toLowerCase();
-}
-
-async function accessTokenFromRefresh(refreshToken: string): Promise<string> {
-  const { id, secret } = clientCreds();
-  const res = await timedFetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: id,
-      client_secret: secret,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-  if (!res.ok) throw new Error("google token refresh failed");
-  const json = (await res.json()) as { access_token?: string };
-  if (!json.access_token) throw new Error("google token refresh returned no token");
-  return json.access_token;
+  const out = await exchangeCodeForUri(code, redirectUri(origin));
+  return { ...out, scope: out.scope || GOOGLE_SCOPES };
 }
 
 export type GoogleCalendarSummary = {

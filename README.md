@@ -72,7 +72,8 @@ npm run dev      # http://localhost:3000 (set PORT= if 3000 is taken)
 | `INGEST_API_KEY` | for note ingest | Bearer token for `POST /api/ingest` (external generated-notes push). See `INGEST_API.md` |
 | `APP_TIMEZONE` | no | IANA tz for "today"/day boundaries. Defaults to `America/New_York` |
 | `TRUSTED_PROXY_COUNT` | no | Reverse proxies in front of the app (for login-throttle client-IP derivation). Default `1`; set `0` if exposed directly. See [`SECURITY.md`](SECURITY.md) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | for Google Calendar | OAuth client for connecting Google calendars (optional — `.ics` still works without it) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | for Google Calendar / Drive | OAuth client for connecting Google calendars and Drive files (optional — `.ics` still works without it) |
+| `DRIVE_MAX_UPLOAD_MB` | no | Max Drive upload size in MB (default `25`; uploads are buffered in memory) |
 
 ## Database
 
@@ -142,6 +143,27 @@ work and personal). Under **Settings → Workspaces**, each workspace picks one 
 connected account to import from — a chosen Google calendar takes precedence over that workspace's
 `.ics` URL. Read-only access only; the refresh token is stored **encrypted at rest**. Import uses the
 same idempotent, never-overwrite-your-notes path as the `.ics` importer.
+
+## Files (Google Drive)
+
+Files live in your own Google Drive, not in the app's database. Setup reuses the same OAuth client
+as calendar import — additionally **enable the Google Drive API** in the Cloud project, add the
+scope `.../auth/drive.file` to the consent screen, and register a second redirect URI
+`https://<your-host>/api/drive/google/callback` (and the `http://localhost:3000` variant for dev).
+Then connect under **Settings → Drive files**.
+
+On connect the app creates a `MeetingHub` folder in your Drive root, with a subtree per workspace:
+a general `Files/` area (browsed by the **Files** nav section) and a `Projects/` tree where each
+project gets its own folder (the **Files** tab on a project page), created lazily on first use.
+You can create folders, upload (`DRIVE_MAX_UPLOAD_MB` cap, default 25), download, rename, and
+trash — but the app-managed folders themselves (workspace/`Files`/`Projects`/project folders) can
+only be managed by the app. Deleting a project moves its folder to `Projects/_archived/`; nothing
+in Drive is ever deleted by the app (trash is Drive's, recoverable for ~30 days).
+
+The `drive.file` scope means the app can only see files **it created** — files dropped into the
+MeetingHub folder directly via the Drive UI won't appear in the app. The refresh token is stored
+encrypted at rest, and disconnecting only forgets the connection; Drive contents are untouched.
+The Files section can be toggled off per workspace under **Settings → Workspaces**.
 
 ## Security & data handling
 

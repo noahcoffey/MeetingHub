@@ -27,12 +27,15 @@ import { ProjectMilestones } from "../project-milestones";
 import { ProjectTimeline } from "../project-timeline";
 import { ProjectLog, type LogFutureNode } from "./project-log";
 import { detectLinkType, LINK_TYPE_LABEL } from "@/lib/link-type";
-import { LinkTypeIcon } from "../link-icon";
+import { LinkFavicon } from "../link-favicon";
+import { AddLinkButton } from "../add-link-button";
 import { NewNoteButton } from "../../notes/new-note-button";
+import { FileBrowser } from "../../files/file-browser";
+import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
 
-const TABS = ["overview", "tasks", "milestones", "meetings", "notes", "links"] as const;
+const TABS = ["overview", "tasks", "milestones", "meetings", "notes", "links", "files"] as const;
 type Tab = (typeof TABS)[number];
 
 function formatUpdatedShort(d: Date): string {
@@ -118,12 +121,21 @@ export default async function ProjectDetailPage({
 }) {
   const { id } = await params;
   const { tab: tabParam } = await searchParams;
-  const tab: Tab = (TABS as readonly string[]).includes(tabParam ?? "")
-    ? (tabParam as Tab)
-    : "overview";
 
   const project = await getProject(id);
   if (!project) notFound();
+
+  // Scope by the project's own workspace (deep-link safe), not the cookie.
+  const workspace = await getWorkspaceById(project.workspaceId);
+  const filesEnabled =
+    workspace !== undefined && isFeatureEnabled(workspace, "files");
+  const visibleTabs = filesEnabled
+    ? TABS
+    : TABS.filter((t) => t !== "files");
+
+  const tab: Tab = (visibleTabs as readonly string[]).includes(tabParam ?? "")
+    ? (tabParam as Tab)
+    : "overview";
 
   const [meetings, actionItems, projects, links, notes, milestones] =
     await Promise.all([
@@ -287,6 +299,7 @@ export default async function ProjectDetailPage({
     meetings: "Meetings",
     notes: "Notes",
     links: "Links",
+    files: "Files",
   };
   const tabCount: Record<Tab, number | null> = {
     overview: null,
@@ -295,6 +308,8 @@ export default async function ProjectDetailPage({
     meetings: meetings.length,
     notes: notes.length,
     links: links.length,
+    // Drive is the source of truth — no count without a live API call.
+    files: null,
   };
 
   return (
@@ -317,7 +332,7 @@ export default async function ProjectDetailPage({
       />
 
       <nav className="hub-tabs" aria-label="Project sections">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <Link
             key={t}
             href={tabHref(t)}
@@ -421,10 +436,14 @@ export default async function ProjectDetailPage({
               )}
             </section>
 
+          </div>
+
+          <div className="hub-overview-col">
             <section className="hub-card">
               <div className="hub-card-head">
                 <h2>Links</h2>
                 {links.length > 0 && <span className="count">{links.length}</span>}
+                <AddLinkButton projectId={project.id} />
               </div>
               {links.length === 0 ? (
                 <p className="muted empty-sm">No links saved yet.</p>
@@ -442,7 +461,7 @@ export default async function ProjectDetailPage({
                           title={LINK_TYPE_LABEL[type]}
                         >
                           <span className="link-icon">
-                            <LinkTypeIcon type={type} />
+                            <LinkFavicon url={l.url} />
                           </span>
                           <span className="link-text">{l.label || l.url}</span>
                         </a>
@@ -452,18 +471,18 @@ export default async function ProjectDetailPage({
                 </ul>
               )}
             </section>
-          </div>
 
-          <section className="hub-card hub-log-card">
-            <div className="hub-card-head">
-              <h2>Project log</h2>
-            </div>
-            <ProjectLog
-              future={futureNodes}
-              entries={logEntries}
-              todayLabel={formatShortDateStr(today)}
-            />
-          </section>
+            <section className="hub-card hub-log-card">
+              <div className="hub-card-head">
+                <h2>Project log</h2>
+              </div>
+              <ProjectLog
+                future={futureNodes}
+                entries={logEntries}
+                todayLabel={formatShortDateStr(today)}
+              />
+            </section>
+          </div>
         </div>
       )}
 
@@ -581,6 +600,15 @@ export default async function ProjectDetailPage({
             projectId={project.id}
             initialLinks={links.map((l) => ({ id: l.id, url: l.url, label: l.label }))}
           />
+        </section>
+      )}
+
+      {tab === "files" && filesEnabled && (
+        <section className="hub-card">
+          <div className="hub-card-head">
+            <h2>Files</h2>
+          </div>
+          <FileBrowser projectId={project.id} />
         </section>
       )}
     </div>

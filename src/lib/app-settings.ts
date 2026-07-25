@@ -40,3 +40,32 @@ export async function setHideGeneratedNotes(hidden: boolean): Promise<void> {
 
 // NOTE: the former "hide anxiety" toggle was removed — anxiety is now just a
 // user-definable journal stat that can be archived under Settings → Journal stats.
+
+// Generic string values (non-secret ids/config — secrets belong in dedicated
+// tables with encryption, e.g. google_accounts). Used by lib/drive.ts for the
+// Drive account/root-folder designation.
+
+export async function getStringSetting(key: string): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, key));
+  return row?.value ?? null;
+}
+
+export async function setStringSetting(
+  key: string,
+  value: string | null,
+): Promise<void> {
+  if (value === null) {
+    await db.delete(appSettings).where(eq(appSettings.key, key));
+    return;
+  }
+  await db
+    .insert(appSettings)
+    .values({ key, value })
+    .onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value, updatedAt: new Date() },
+    });
+}

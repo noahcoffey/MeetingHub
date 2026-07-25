@@ -10,6 +10,7 @@ import {
   type Meeting,
   type ActionItem,
 } from "@/db/schema";
+import { tryArchiveProjectFolder, tryRenameDriveFolder } from "./drive";
 
 export async function listProjects(
   workspaceId: string,
@@ -77,13 +78,22 @@ export async function updateProject(
     .set(set)
     .where(eq(projects.id, id))
     .returning();
+  // Best-effort: keep the Drive folder's name in sync (no-op when Drive isn't
+  // connected or the project has no folder yet; never fails the update).
+  if (p && patch.name !== undefined) {
+    await tryRenameDriveFolder(p.driveFolderId, p.name, { projectId: p.id });
+  }
   return p;
 }
 
 export async function deleteProject(id: string): Promise<void> {
+  const project = await getProject(id);
   // meetings.project_id / action_items.project_id are ON DELETE SET NULL —
   // this detaches associated work, never deletes it.
   await db.delete(projects).where(eq(projects.id, id));
+  // Best-effort: park the Drive folder under Projects/_archived (user files
+  // are never deleted; failures only warn).
+  if (project) await tryArchiveProjectFolder(project);
 }
 
 export async function listMeetingsForProject(projectId: string): Promise<Meeting[]> {

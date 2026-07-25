@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { detectLinkType, LINK_TYPE_LABEL } from "@/lib/link-type";
-import { LinkTypeIcon } from "./link-icon";
+import { LinkFavicon } from "./link-favicon";
 
 export type ProjectLinkItem = { id: string; url: string; label: string | null };
 
@@ -73,7 +73,7 @@ export function ProjectLinks({
                   title={LINK_TYPE_LABEL[type]}
                 >
                   <span className="link-icon">
-                    <LinkTypeIcon type={type} />
+                    <LinkFavicon url={l.url} />
                   </span>
                   <span className="link-text">{l.label || l.url}</span>
                 </a>

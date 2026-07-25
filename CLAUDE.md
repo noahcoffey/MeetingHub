@@ -34,7 +34,9 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   excluded from the matcher.
 - `src/lib/` — server logic, kept out of route handlers: `meetings.ts`, `action-items.ts`, `journal.ts`,
   `projects.ts` (+ `project-links.ts`), `notes.ts`, `people.ts`, `task-dependencies.ts`, `dashboard.ts`,
-  `ics-calendar.ts`, `ingest.ts`, `search.ts`, `webauthn.ts`, `login-throttle.ts`, `dates.ts`.
+  `ics-calendar.ts`, `ingest.ts`, `search.ts`, `webauthn.ts`, `login-throttle.ts`, `dates.ts`,
+  `google-auth.ts` (shared Google OAuth plumbing) + `google-calendar.ts` / `google-drive.ts` +
+  `drive.ts` (Drive folder hierarchy/protection — see "Drive files" below).
 - `src/app/(app)/` — the authed UI: Dashboard landing page (`page.tsx`, aggregates via
   `lib/dashboard.ts`, auto-refreshes every 60s), day meeting workspace (`meetings/` + `meetings/[id]`),
   `projects/` (list + `[id]` hub page), `people/` (list + `[id]` hub: matched meetings, agenda
@@ -92,12 +94,13 @@ Defined in `src/db/schema.ts`. Core tables:
   rejected in the lib layer. Switcher UI: the MH mark in the sidebar (`workspace-switcher.tsx`);
   CRUD under Settings → Workspaces (delete is guarded: default or non-empty workspaces refuse).
   **Feature toggles**: `disabled_features` jsonb (the DISABLED set — empty = full app; keys in
-  `WORKSPACE_FEATURES`: calendar|meetings|projects|people|notes|journal|reports; Tasks + dashboard
-  always on). Enforced via `isFeatureEnabled()` in: SideNav filtering, `redirect("/")` guards on
-  the list pages (detail pages stay deep-linkable), dashboard (`getDashboardData(workspace)` skips
-  disabled queries — journal off means no auto-created entry — and returns `features` for section
-  hiding), search (skips disabled groups), the meetings-page import button, and a 403 on
-  `/api/calendar/import`. Toggled per row under Settings → Workspaces.
+  `WORKSPACE_FEATURES`: calendar|meetings|projects|people|notes|journal|reports|files; Tasks +
+  dashboard always on). Enforced via `isFeatureEnabled()` in: SideNav filtering, `redirect("/")`
+  guards on the list pages (detail pages stay deep-linkable), dashboard (`getDashboardData(workspace)`
+  skips disabled queries — journal off means no auto-created entry — and returns `features` for
+  section hiding), search (skips disabled groups), the meetings-page import button, a 403 on
+  `/api/calendar/import`, and the `/api/drive/*` file routes (+ the project hub hides its Files
+  tab). Toggled per row under Settings → Workspaces.
 - `users` — single seeded user; `password_enabled` flag flips off once a passkey is registered.
 - `webauthn_credentials` / `recovery_codes` — passkeys and one-time recovery codes for that user.
 - `projects` — larger initiatives that group meetings and tasks (`status` active|archived with
@@ -220,6 +223,27 @@ row named after the client, so **Settings → API tokens is the revocation surfa
 endpoints and `.well-known` are excluded from the middleware matcher; the consent page deliberately
 is not. Watch out: mcp-handler globally augments `Request` with `auth`, which is why
 `lib/webauthn.ts` types request params structurally (`{ headers: Headers }`).
+
+## Drive files
+
+Per-workspace file storage backed by the user's own Google Drive (`drive.file` scope — the app
+only sees files it created; no metadata mirror in Postgres, Drive is the source of truth). OAuth
+reuses the calendar client via shared `lib/google-auth.ts`; a separate connect/callback pair at
+`/api/drive/google/*` designates ONE global Drive account via `app_settings` keys
+(`drive_account_id`, `drive_root_folder_id`) — Settings → Drive files is the connect/disconnect
+surface (disconnect only clears the keys; the `google_accounts` row may still serve calendar).
+Folder tree: `MeetingHub/<Workspace>/{Files,Projects/<Project>,Projects/_archived}`; only folder
+IDs are stored (`workspaces.drive_*_folder_id`, `projects.drive_folder_id`), lazily created and
+self-healing (stored id 404/trashed → recreate) via `ensure*` in `lib/drive.ts`. `lib/google-drive.ts`
+is the raw v3 REST client. Routes under `/api/drive/` (session-gated, inside the middleware
+matcher): files list/upload (multipart, buffered, `DRIVE_MAX_UPLOAD_MB` cap, resumable to Drive),
+folders create (409 on sibling dup), rename/trash, download (server-proxied stream — prod CSP
+blocks browser→googleapis). Guard rails on every mutation: target ∉ `managedFolderIds()` (403) and
+`assertInTree()` parent-walk under the request's base folder (404). UI: shared
+`(app)/files/file-browser.tsx` used by the `/files` page (workspace `Files/` area) and the project
+hub Files tab (`?projectId=` scopes to the project's folder, deep-link safe). Lifecycle: project
+delete moves its folder to `_archived/`, project/workspace rename best-effort renames the Drive
+folder (`try*` helpers never throw; logs ids only). No v1/MCP exposure yet (follow-up).
 
 ## Out of scope (do not build)
 
