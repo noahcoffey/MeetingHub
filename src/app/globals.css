@@ -6554,3 +6554,20 @@ a.flc-row:hover .flc-name {
   flex: 1;
   min-width: 12rem;
 }
+
+/* drag & drop (Files & Links browser + overview card) */
+.file-row.is-draggable,
+.flc-item.is-draggable {
+  cursor: grab;
+}
+.file-row.is-dragging,
+.flc-item.is-dragging {
+  opacity: 0.45;
+}
+.file-row.drop-hover,
+.file-crumb.drop-hover,
+.flc-row.drop-hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+}

@@ -171,10 +171,16 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
   const [state, setState] = useState<BrowserState>("loading");
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [links, setLinks] = useState<LinkItem[]>([]);
+  const [baseFolderId, setBaseFolderId] = useState<string | null>(null);
   // "ok" or why Drive is unavailable (project mode then shows links only).
   const [driveKey, setDriveKey] = useState<string>("ok");
   const [crumbs, setCrumbs] = useState<Crumb[]>([]); // path below the base
   const [actionError, setActionError] = useState<string | null>(null);
+  // Drag & drop: files and links drag; folder rows and breadcrumbs receive.
+  const [dragItem, setDragItem] = useState<
+    { kind: "file" | "link"; id: string } | null
+  >(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -213,6 +219,7 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
         }
         setFiles(data.files);
         setLinks(data.links ?? []);
+        setBaseFolderId(data.baseFolderId ?? null);
         setDriveKey(data.drive ?? "ok");
         setState("ready");
       } catch {
@@ -369,8 +376,88 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
     }
   }
 
+  // Move the dragged item into targetFolderId (the base id means "top
+  // level"; links store that placement as null). Optimistic removal from the
+  // current listing with rollback on failure.
+  async function moveTo(targetFolderId: string) {
+    const item = dragItem;
+    setDragItem(null);
+    setDropTarget(null);
+    if (!item || !targetFolderId) return;
+    const here = currentFolderId ?? baseFolderId;
+    if (targetFolderId === here || targetFolderId === item.id) return;
+    const prevFiles = files;
+    const prevLinks = links;
+    if (item.kind === "file") {
+      setFiles((fs) => fs.filter((f) => f.id !== item.id));
+    } else {
+      setLinks((ls) => ls.filter((l) => l.id !== item.id));
+    }
+    try {
+      const res =
+        item.kind === "file"
+          ? await fetch(`/api/drive/files/${item.id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                parentId: targetFolderId,
+                projectId: projectId ?? null,
+              }),
+            })
+          : await fetch(`/api/project-links/${item.id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                driveFolderId:
+                  targetFolderId === baseFolderId ? null : targetFolderId,
+              }),
+            });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Move failed");
+      }
+    } catch (err) {
+      setFiles(prevFiles);
+      setLinks(prevLinks);
+      setActionError(err instanceof Error ? err.message : "Move failed");
+    }
+  }
+
+  const dragProps = (kind: "file" | "link", id: string) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      setDragItem({ kind, id });
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", id);
+    },
+    onDragEnd: () => {
+      setDragItem(null);
+      setDropTarget(null);
+    },
+  });
+
+  const dropProps = (folderId: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!dragItem) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDropTarget(folderId);
+    },
+    onDragLeave: () => {
+      setDropTarget((t) => (t === folderId ? null : t));
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      void moveTo(folderId);
+    },
+  });
+
   const linkRow = (l: LinkItem) => (
-    <li key={`link-${l.id}`} className="file-row">
+    <li
+      key={`link-${l.id}`}
+      className={`file-row is-draggable ${dragItem?.kind === "link" && dragItem.id === l.id ? "is-dragging" : ""}`}
+      {...dragProps("link", l.id)}
+    >
       <span className="file-icon">
         <LinkFavicon url={l.url} />
       </span>
@@ -490,9 +577,12 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
         <nav className="file-crumbs" aria-label="Folder path">
           <button
             type="button"
-            className={`file-crumb ${crumbs.length === 0 ? "is-current" : ""}`}
+            className={`file-crumb ${crumbs.length === 0 ? "is-current" : ""} ${dropTarget === baseFolderId && crumbs.length > 0 ? "drop-hover" : ""}`}
             onClick={() => jumpTo(-1)}
             disabled={crumbs.length === 0}
+            {...(baseFolderId && crumbs.length > 0
+              ? dropProps(baseFolderId)
+              : {})}
           >
             {projectId ? "Project files" : "Files"}
           </button>
@@ -503,9 +593,10 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
               </span>
               <button
                 type="button"
-                className={`file-crumb ${i === crumbs.length - 1 ? "is-current" : ""}`}
+                className={`file-crumb ${i === crumbs.length - 1 ? "is-current" : ""} ${dropTarget === c.id && i < crumbs.length - 1 ? "drop-hover" : ""}`}
                 onClick={() => jumpTo(i)}
                 disabled={i === crumbs.length - 1}
+                {...(i < crumbs.length - 1 ? dropProps(c.id) : {})}
               >
                 {c.name}
               </button>
@@ -603,7 +694,15 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
               projectId ? `?projectId=${projectId}` : ""
             }`;
             return (
-              <li key={f.id} className="file-row">
+              <li
+                key={f.id}
+                className={`file-row ${
+                  isFolder
+                    ? `is-drop-folder ${dropTarget === f.id ? "drop-hover" : ""}`
+                    : `is-draggable ${dragItem?.kind === "file" && dragItem.id === f.id ? "is-dragging" : ""}`
+                }`}
+                {...(isFolder ? dropProps(f.id) : dragProps("file", f.id))}
+              >
                 <span className={`file-icon ${isFolder ? "is-folder" : ""}`}>
                   <FileIcon mimeType={f.mimeType} />
                 </span>

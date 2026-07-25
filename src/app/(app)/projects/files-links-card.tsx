@@ -60,6 +60,16 @@ export function FilesLinksCard({
   // folderId -> its fetched listing (undefined = not fetched yet).
   const [children, setChildren] = useState<Record<string, Listing>>({});
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  // Drag & drop: files/links drag between listings; folder rows receive.
+  const [dragItem, setDragItem] = useState<
+    | { kind: "file"; file: DriveFile; source: string }
+    | { kind: "link"; link: LinkItem; source: string }
+    | null
+  >(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // Listing keys: BASE_KEY for the top level, otherwise the folder id.
+  const BASE_KEY = "__base__";
 
   const fetchListing = useCallback(
     async (folderId: string | null): Promise<Listing & { drive?: string } | null> => {
@@ -123,7 +133,98 @@ export function FilesLinksCard({
     setBase((prev) => ({ ...prev, links: [...prev.links, link] }));
   }
 
-  function renderListing(listing: Listing, depth: number): ReactNode {
+  function updateListing(key: string, fn: (l: Listing) => Listing) {
+    if (key === BASE_KEY) setBase(fn);
+    else
+      setChildren((prev) =>
+        prev[key] ? { ...prev, [key]: fn(prev[key]) } : prev,
+      );
+  }
+
+  async function refreshListing(key: string) {
+    const listing = await fetchListing(key === BASE_KEY ? null : key);
+    if (!listing) return;
+    updateListing(key, () => ({ files: listing.files, links: listing.links }));
+  }
+
+  async function moveTo(destFolderId: string) {
+    const item = dragItem;
+    setDragItem(null);
+    setDropTarget(null);
+    if (!item || item.source === destFolderId) return;
+    const id = item.kind === "file" ? item.file.id : item.link.id;
+    if (id === destFolderId) return;
+    // Optimistic: pull from the source listing, drop into the destination's
+    // listing if we've already fetched it (else it shows on first expand).
+    updateListing(item.source, (l) =>
+      item.kind === "file"
+        ? { ...l, files: l.files.filter((f) => f.id !== id) }
+        : { ...l, links: l.links.filter((x) => x.id !== id) },
+    );
+    updateListing(destFolderId, (l) =>
+      item.kind === "file"
+        ? { ...l, files: [...l.files, item.file] }
+        : { ...l, links: [...l.links, item.link] },
+    );
+    try {
+      const res =
+        item.kind === "file"
+          ? await fetch(`/api/drive/files/${id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ parentId: destFolderId, projectId }),
+            })
+          : await fetch(`/api/project-links/${id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ driveFolderId: destFolderId }),
+            });
+      if (!res.ok) throw new Error();
+    } catch {
+      // Re-sync both sides rather than tracking a manual rollback.
+      await refreshListing(item.source);
+      await refreshListing(destFolderId);
+    }
+  }
+
+  const dragProps = (
+    entry:
+      | { kind: "file"; file: DriveFile }
+      | { kind: "link"; link: LinkItem },
+    source: string,
+  ) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      setDragItem({ ...entry, source });
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData(
+        "text/plain",
+        entry.kind === "file" ? entry.file.id : entry.link.id,
+      );
+    },
+    onDragEnd: () => {
+      setDragItem(null);
+      setDropTarget(null);
+    },
+  });
+
+  const dropProps = (folderId: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!dragItem) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDropTarget(folderId);
+    },
+    onDragLeave: () => {
+      setDropTarget((t) => (t === folderId ? null : t));
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      void moveTo(folderId);
+    },
+  });
+
+  function renderListing(listing: Listing, listingKey: string): ReactNode {
     return sortedEntries(listing).map((entry) => {
       if (entry.kind === "folder") {
         const open = openFolders.has(entry.file.id);
@@ -132,9 +233,10 @@ export function FilesLinksCard({
           <li key={entry.file.id} className="flc-item">
             <button
               type="button"
-              className="flc-row flc-folder"
+              className={`flc-row flc-folder ${dropTarget === entry.file.id ? "drop-hover" : ""}`}
               onClick={() => toggleFolder(entry.file.id)}
               aria-expanded={open}
+              {...dropProps(entry.file.id)}
             >
               <span className={`flc-chevron ${open ? "open" : ""}`} aria-hidden>
                 ›
@@ -148,7 +250,7 @@ export function FilesLinksCard({
                 ) : kids.files.length === 0 && kids.links.length === 0 ? (
                   <li className="flc-item muted flc-loading">Empty</li>
                 ) : (
-                  renderListing(kids, depth + 1)
+                  renderListing(kids, entry.file.id)
                 )}
               </ul>
             )}
@@ -157,7 +259,11 @@ export function FilesLinksCard({
       }
       if (entry.kind === "file") {
         return (
-          <li key={entry.file.id} className="flc-item">
+          <li
+            key={entry.file.id}
+            className="flc-item is-draggable"
+            {...dragProps({ kind: "file", file: entry.file }, listingKey)}
+          >
             <a
               className="flc-row"
               href={entry.file.webViewLink}
@@ -180,7 +286,11 @@ export function FilesLinksCard({
         );
       }
       return (
-        <li key={`link-${entry.link.id}`} className="flc-item">
+        <li
+          key={`link-${entry.link.id}`}
+          className="flc-item is-draggable"
+          {...dragProps({ kind: "link", link: entry.link }, listingKey)}
+        >
           <a
             className="flc-row"
             href={entry.link.url}
@@ -215,7 +325,7 @@ export function FilesLinksCard({
               : "No links yet. Files appear here once Drive is connected."}
         </p>
       ) : (
-        <ul className="flc-list">{renderListing(base, 0)}</ul>
+        <ul className="flc-list">{renderListing(base, BASE_KEY)}</ul>
       )}
     </>
   );
