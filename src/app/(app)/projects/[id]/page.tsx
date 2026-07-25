@@ -29,6 +29,7 @@ import { ProjectLog, type LogFutureNode } from "./project-log";
 import { detectLinkType, LINK_TYPE_LABEL } from "@/lib/link-type";
 import { LinkFavicon } from "../link-favicon";
 import { AddLinkButton } from "../add-link-button";
+import { FilesLinksCard } from "../files-links-card";
 import { NewNoteButton } from "../../notes/new-note-button";
 import { FileBrowser } from "../../files/file-browser";
 import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
@@ -129,12 +130,16 @@ export default async function ProjectDetailPage({
   const workspace = await getWorkspaceById(project.workspaceId);
   const filesEnabled =
     workspace !== undefined && isFeatureEnabled(workspace, "files");
+  // Links live inside the unified Files & Links tab; the standalone Links tab
+  // only exists as the fallback when the files feature is off.
   const visibleTabs = filesEnabled
-    ? TABS
+    ? TABS.filter((t) => t !== "links")
     : TABS.filter((t) => t !== "files");
 
-  const tab: Tab = (visibleTabs as readonly string[]).includes(tabParam ?? "")
-    ? (tabParam as Tab)
+  // Old ?tab=links deep-links land on the merged tab.
+  const requestedTab = tabParam === "links" && filesEnabled ? "files" : tabParam;
+  const tab: Tab = (visibleTabs as readonly string[]).includes(requestedTab ?? "")
+    ? (requestedTab as Tab)
     : "overview";
 
   const [meetings, actionItems, projects, links, notes, milestones] =
@@ -299,7 +304,7 @@ export default async function ProjectDetailPage({
     meetings: "Meetings",
     notes: "Notes",
     links: "Links",
-    files: "Files",
+    files: "Files & Links",
   };
   const tabCount: Record<Tab, number | null> = {
     overview: null,
@@ -440,35 +445,50 @@ export default async function ProjectDetailPage({
 
           <div className="hub-overview-col">
             <section className="hub-card">
-              <div className="hub-card-head">
-                <h2>Links</h2>
-                {links.length > 0 && <span className="count">{links.length}</span>}
-                <AddLinkButton projectId={project.id} />
-              </div>
-              {links.length === 0 ? (
-                <p className="muted empty-sm">No links saved yet.</p>
+              {filesEnabled ? (
+                <FilesLinksCard
+                  projectId={project.id}
+                  initialLinks={links.map((l) => ({
+                    id: l.id,
+                    url: l.url,
+                    label: l.label,
+                  }))}
+                />
               ) : (
-                <ul className="link-list">
-                  {links.map((l) => {
-                    const type = detectLinkType(l.url);
-                    return (
-                      <li key={l.id} className="link-row">
-                        <a
-                          href={l.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link-anchor"
-                          title={LINK_TYPE_LABEL[type]}
-                        >
-                          <span className="link-icon">
-                            <LinkFavicon url={l.url} />
-                          </span>
-                          <span className="link-text">{l.label || l.url}</span>
-                        </a>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <>
+                  <div className="hub-card-head">
+                    <h2>Links</h2>
+                    {links.length > 0 && (
+                      <span className="count">{links.length}</span>
+                    )}
+                    <AddLinkButton projectId={project.id} />
+                  </div>
+                  {links.length === 0 ? (
+                    <p className="muted empty-sm">No links saved yet.</p>
+                  ) : (
+                    <ul className="link-list">
+                      {links.map((l) => {
+                        const type = detectLinkType(l.url);
+                        return (
+                          <li key={l.id} className="link-row">
+                            <a
+                              href={l.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link-anchor"
+                              title={LINK_TYPE_LABEL[type]}
+                            >
+                              <span className="link-icon">
+                                <LinkFavicon url={l.url} />
+                              </span>
+                              <span className="link-text">{l.label || l.url}</span>
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </>
               )}
             </section>
 
@@ -606,7 +626,7 @@ export default async function ProjectDetailPage({
       {tab === "files" && filesEnabled && (
         <section className="hub-card">
           <div className="hub-card-head">
-            <h2>Files</h2>
+            <h2>Files &amp; Links</h2>
           </div>
           <FileBrowser projectId={project.id} />
         </section>

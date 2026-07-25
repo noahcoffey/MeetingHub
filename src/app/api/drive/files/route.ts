@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { assertInTree } from "@/lib/drive";
+import { assertInTree, ensureProjectFolder, getDriveToken, healLinkFolders } from "@/lib/drive";
 import { listChildren, uploadFile } from "@/lib/google-drive";
-import { driveError, resolveDriveContext } from "../_lib";
+import { listLinksForProject, listLinksInFolder } from "@/lib/project-links";
+import {
+  driveError,
+  driveUnavailableKey,
+  resolveDriveContext,
+  resolveProjectScope,
+} from "../_lib";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +20,10 @@ function maxUploadBytes(): number {
 }
 
 // List a folder within the workspace Files/ area (?projectId= switches to the
-// project's tree). No folderId = the tree's base folder.
+// project's tree). No folderId = the tree's base folder. Project listings
+// also carry the folder's LINKS (project_links placed there; null placement =
+// base) — and when Drive itself is unavailable, a project request degrades to
+// links-only ({ drive: <why> }) instead of erroring, so links never vanish.
 export const GET = auth(async (req) => {
   if (!req.auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -23,7 +32,48 @@ export const GET = auth(async (req) => {
   const projectId = url.searchParams.get("projectId");
   const folderId = url.searchParams.get("folderId");
   try {
-    const ctx = await resolveDriveContext(projectId);
+    if (projectId) {
+      const { project, workspace } = await resolveProjectScope(projectId);
+      let token: string;
+      let baseFolderId: string;
+      try {
+        token = await getDriveToken();
+        baseFolderId = await ensureProjectFolder(token, project, workspace);
+      } catch (e) {
+        const why = driveUnavailableKey(e);
+        if (!why) throw e;
+        // Links-only fallback: no folders exist without Drive, so show all.
+        const links = await listLinksForProject(projectId);
+        return NextResponse.json({
+          baseFolderId: null,
+          folderId: null,
+          files: [],
+          links,
+          drive: why,
+        });
+      }
+      const target = folderId || baseFolderId;
+      if (target !== baseFolderId) {
+        await assertInTree(token, baseFolderId, target);
+      } else {
+        // Base listing doubles as the self-heal pass: links whose folder
+        // vanished out-of-band fall back to the base level.
+        await healLinkFolders(token, projectId);
+      }
+      const [files, links] = await Promise.all([
+        listChildren(token, target),
+        listLinksInFolder(projectId, target === baseFolderId ? null : target),
+      ]);
+      return NextResponse.json({
+        baseFolderId,
+        folderId: target,
+        files,
+        links,
+        drive: "ok",
+      });
+    }
+
+    const ctx = await resolveDriveContext(null);
     const target = folderId || ctx.baseFolderId;
     if (target !== ctx.baseFolderId) {
       await assertInTree(ctx.token, ctx.baseFolderId, target);
@@ -33,6 +83,8 @@ export const GET = auth(async (req) => {
       baseFolderId: ctx.baseFolderId,
       folderId: target,
       files,
+      links: [],
+      drive: "ok",
     });
   } catch (e) {
     const res = driveError(e);

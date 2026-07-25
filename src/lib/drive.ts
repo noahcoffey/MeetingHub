@@ -20,9 +20,14 @@ import {
   DriveApiError,
   findChildFolder,
   getFileMeta,
+  listChildFolderIds,
   moveFile,
   renameFile,
 } from "./google-drive";
+import {
+  linkFolderIdsForProject,
+  rehomeLinksFromFolders,
+} from "./project-links";
 
 // Google Drive business layer: the app-managed folder hierarchy
 //
@@ -309,6 +314,43 @@ export async function assertInTree(
     current = parent;
   }
   throw new DriveScopeError();
+}
+
+// ---- link placement upkeep (unified Files & Links browser) ----
+
+// A folder id plus every descendant folder id (BFS, depth-capped — project
+// trees are small). Used to re-home links when a folder subtree is trashed.
+export async function collectFolderTreeIds(
+  token: string,
+  rootFolderId: string,
+  maxDepth = 10,
+): Promise<string[]> {
+  const all = [rootFolderId];
+  let frontier = [rootFolderId];
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+    const next = (
+      await Promise.all(frontier.map((id) => listChildFolderIds(token, id)))
+    ).flat();
+    all.push(...next);
+    frontier = next;
+  }
+  return all;
+}
+
+// Self-heal for link placements: any link folder that no longer exists (or
+// is trashed) in Drive gets nulled so those links surface at the project's
+// top level instead of silently disappearing.
+export async function healLinkFolders(
+  token: string,
+  projectId: string,
+): Promise<void> {
+  const folderIds = await linkFolderIdsForProject(projectId);
+  if (folderIds.length === 0) return;
+  const alive = await Promise.all(
+    folderIds.map((id) => folderAlive(token, id)),
+  );
+  const dead = folderIds.filter((_, i) => !alive[i]);
+  await rehomeLinksFromFolders(dead);
 }
 
 // ---- lifecycle hooks (best-effort, never throw) ----

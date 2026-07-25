@@ -4,9 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Overlay } from "../confirm-dialog";
 
-// "Add link" for the overview Links card: opens a small modal (URL + optional
-// label), POSTs to /api/project-links, and refreshes the server-rendered list.
-export function AddLinkButton({ projectId }: { projectId: string }) {
+export type AddedLink = {
+  id: string;
+  url: string;
+  label: string | null;
+  driveFolderId: string | null;
+};
+
+// "Add link" modal button (URL + optional label) POSTing to
+// /api/project-links. driveFolderId places the link inside a Drive folder of
+// the unified browser (null/omitted = the project's top level). With an
+// onAdded callback the caller owns the list state; without one the
+// server-rendered list is refreshed.
+export function AddLinkButton({
+  projectId,
+  driveFolderId = null,
+  onAdded,
+}: {
+  projectId: string;
+  driveFolderId?: string | null;
+  onAdded?: (link: AddedLink) => void;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
@@ -42,6 +60,7 @@ export function AddLinkButton({ projectId }: { projectId: string }) {
           projectId,
           url: url.trim(),
           label: label.trim() || null,
+          driveFolderId,
         }),
       });
       const data = await res.json();
@@ -50,7 +69,8 @@ export function AddLinkButton({ projectId }: { projectId: string }) {
       setOpen(false);
       setUrl("");
       setLabel("");
-      router.refresh();
+      if (onAdded) onAdded(data.link as AddedLink);
+      else router.refresh();
     } catch (err) {
       setSaving(false);
       setError(err instanceof Error ? err.message : "Could not add link");

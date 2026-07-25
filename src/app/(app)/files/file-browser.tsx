@@ -1,10 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AddLinkButton, type AddedLink } from "../projects/add-link-button";
+import { LinkFavicon } from "../projects/link-favicon";
 
 // Shared Drive file browser: the /files page mounts it bare (workspace Files/
-// area) and the project hub Files tab passes projectId (the project's folder).
-// Drive is the source of truth — every action round-trips to /api/drive/*.
+// area) and the project hub Files & Links tab passes projectId (the project's
+// folder). Drive is the source of truth for files/folders; project LINKS
+// (Postgres rows placed into Drive folders by id) are merged into project
+// listings, and when Drive is unavailable the project view degrades to a
+// links-only list rather than hiding them.
 
 type DriveFile = {
   id: string;
@@ -14,6 +19,34 @@ type DriveFile = {
   modifiedTime?: string;
   webViewLink?: string;
 };
+
+type LinkItem = {
+  id: string;
+  url: string;
+  label: string | null;
+  driveFolderId?: string | null;
+};
+
+// Non-folder rows interleaved alphabetically so links and files feel like one
+// collection; folders keep Drive's folders-first ordering.
+type Row = { kind: "file"; file: DriveFile } | { kind: "link"; link: LinkItem };
+
+function mergedRows(files: DriveFile[], links: LinkItem[]): Row[] {
+  const folders: Row[] = files
+    .filter((f) => f.mimeType === FOLDER_MIME)
+    .map((file) => ({ kind: "file", file }));
+  const rest: Row[] = [
+    ...files
+      .filter((f) => f.mimeType !== FOLDER_MIME)
+      .map((file): Row => ({ kind: "file", file })),
+    ...links.map((link): Row => ({ kind: "link", link })),
+  ].sort((a, b) => {
+    const an = a.kind === "file" ? a.file.name : a.link.label || a.link.url;
+    const bn = b.kind === "file" ? b.file.name : b.link.label || b.link.url;
+    return an.toLowerCase().localeCompare(bn.toLowerCase());
+  });
+  return [...folders, ...rest];
+}
 
 type Crumb = { id: string; name: string };
 
@@ -137,6 +170,9 @@ function FileIcon({ mimeType }: { mimeType: string }) {
 export function FileBrowser({ projectId }: { projectId?: string }) {
   const [state, setState] = useState<BrowserState>("loading");
   const [files, setFiles] = useState<DriveFile[]>([]);
+  const [links, setLinks] = useState<LinkItem[]>([]);
+  // "ok" or why Drive is unavailable (project mode then shows links only).
+  const [driveKey, setDriveKey] = useState<string>("ok");
   const [crumbs, setCrumbs] = useState<Crumb[]>([]); // path below the base
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -176,6 +212,8 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
           return;
         }
         setFiles(data.files);
+        setLinks(data.links ?? []);
+        setDriveKey(data.drive ?? "ok");
         setState("ready");
       } catch {
         setState("error");
@@ -315,6 +353,50 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
     }
   }
 
+  function linkAdded(link: AddedLink) {
+    setLinks((prev) => [...prev, link]);
+  }
+
+  async function removeLink(id: string) {
+    const prev = links;
+    setLinks((ls) => ls.filter((l) => l.id !== id));
+    try {
+      const res = await fetch(`/api/project-links/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+    } catch {
+      setLinks(prev);
+      setActionError("Could not remove link");
+    }
+  }
+
+  const linkRow = (l: LinkItem) => (
+    <li key={`link-${l.id}`} className="file-row">
+      <span className="file-icon">
+        <LinkFavicon url={l.url} />
+      </span>
+      <a
+        className="file-name"
+        href={l.url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {l.label || l.url}
+      </a>
+      <span className="file-meta">
+        <span className="file-date">Link</span>
+      </span>
+      <span className="file-actions">
+        <button
+          type="button"
+          className="row-action danger"
+          onClick={() => void removeLink(l.id)}
+        >
+          Remove
+        </button>
+      </span>
+    </li>
+  );
+
   if (state === "not_configured") {
     return (
       <p className="muted empty-sm">
@@ -366,6 +448,42 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
     );
   }
 
+  // Project mode with Drive unavailable: links still work (flat list, new
+  // ones land at the project's top level); files need Drive.
+  if (state === "ready" && driveKey !== "ok" && projectId) {
+    const note =
+      driveKey === "reconnect_required"
+        ? "Google Drive access expired — reconnect to see this project's files."
+        : driveKey === "not_configured"
+          ? "Files need Google Drive, which isn't configured on this server. Links work without it."
+          : "Connect Google Drive to add files and folders here. Links work without it.";
+    return (
+      <div className="file-browser">
+        <div className="file-toolbar">
+          <p className="muted file-degraded-note">{note}</p>
+          <div className="file-toolbar-actions">
+            {driveKey !== "not_configured" && (
+              <a className="ghost-btn" href="/settings/drive">
+                {driveKey === "reconnect_required"
+                  ? "Reconnect Drive"
+                  : "Set up Drive"}
+              </a>
+            )}
+            <AddLinkButton projectId={projectId} onAdded={linkAdded} />
+          </div>
+        </div>
+        {actionError && <p className="settings-banner err">{actionError}</p>}
+        {links.length === 0 ? (
+          <p className="muted empty-sm">No links yet.</p>
+        ) : (
+          <ul className="file-list">{links.map(linkRow)}</ul>
+        )}
+      </div>
+    );
+  }
+
+  const rows = mergedRows(files, projectId ? links : []);
+
   return (
     <div className="file-browser">
       <div className="file-toolbar">
@@ -395,6 +513,13 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
           ))}
         </nav>
         <div className="file-toolbar-actions">
+          {projectId && (
+            <AddLinkButton
+              projectId={projectId}
+              driveFolderId={currentFolderId}
+              onAdded={linkAdded}
+            />
+          )}
           <button
             type="button"
             className="ghost-btn"
@@ -460,13 +585,17 @@ export function FileBrowser({ projectId }: { projectId?: string }) {
 
       {state === "loading" ? (
         <p className="muted empty-sm">Loading…</p>
-      ) : files.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="muted empty-sm">
-          Nothing here yet — upload a file or create a folder.
+          {projectId
+            ? "Nothing here yet — upload a file, create a folder, or add a link."
+            : "Nothing here yet — upload a file or create a folder."}
         </p>
       ) : (
         <ul className="file-list">
-          {files.map((f) => {
+          {rows.map((row) => {
+            if (row.kind === "link") return linkRow(row.link);
+            const f = row.file;
             const isFolder = f.mimeType === FOLDER_MIME;
             const isGoogleNative =
               !isFolder && f.mimeType.startsWith(GOOGLE_NATIVE_PREFIX);
