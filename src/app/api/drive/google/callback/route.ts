@@ -5,12 +5,12 @@ import { upsertGoogleAccount } from "@/lib/google-accounts";
 import { setStringSetting } from "@/lib/app-settings";
 import {
   DRIVE_ACCOUNT_KEY,
+  DRIVE_OAUTH_STATE_COOKIE,
   driveRedirectUri,
   ensureRootFolder,
 } from "@/lib/drive";
 import { getSingleUser } from "@/lib/webauthn";
 import { requestOrigin } from "@/lib/request-origin";
-import { DRIVE_OAUTH_STATE_COOKIE } from "../connect/route";
 
 export const dynamic = "force-dynamic";
 

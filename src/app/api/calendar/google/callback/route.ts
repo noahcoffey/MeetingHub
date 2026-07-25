@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { exchangeCode, fetchUserEmail } from "@/lib/google-calendar";
+import {
+  exchangeCode,
+  fetchUserEmail,
+  OAUTH_STATE_COOKIE,
+} from "@/lib/google-calendar";
 import { upsertGoogleAccount } from "@/lib/google-accounts";
 import { getSingleUser } from "@/lib/webauthn";
 import { requestOrigin } from "@/lib/request-origin";
-import { OAUTH_STATE_COOKIE } from "../connect/route";
 
 export const dynamic = "force-dynamic";
 

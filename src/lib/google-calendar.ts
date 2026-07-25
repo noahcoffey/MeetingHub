@@ -20,6 +20,11 @@ export {
 } from "./google-auth";
 
 const CAL_API = "https://www.googleapis.com/calendar/v3";
+
+// One-shot CSRF state cookie for the connect flow. Lives here (not in the
+// route file) because Next's dev-generated route types reject non-handler
+// exports from route.ts.
+export const OAUTH_STATE_COOKIE = "g_oauth_state";
 // openid+email identifies the account; calendar.readonly is the only data scope.
 export const GOOGLE_SCOPES = [
   "openid",
