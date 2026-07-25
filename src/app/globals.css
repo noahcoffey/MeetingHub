@@ -6510,7 +6510,8 @@ button.file-name-folder:hover {
 a.flc-row:hover .flc-name {
   text-decoration: underline;
 }
-.flc-row:hover {
+.flc-row:hover,
+.flc-row:focus-visible {
   background: var(--surface);
 }
 .flc-folder .flc-name {

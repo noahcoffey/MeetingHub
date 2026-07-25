@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { assertInTree, ensureProjectFolder, getDriveToken } from "@/lib/drive";
 import { createLink } from "@/lib/project-links";
+import { resolveProjectScope } from "../drive/_lib";
 
 export const dynamic = "force-dynamic";
 
@@ -38,13 +40,37 @@ export const POST = auth(async (req) => {
     return NextResponse.json({ error: "invalid driveFolderId" }, { status: 400 });
   }
 
+  // Normalize ("" -> null) and verify a real placement actually sits inside
+  // this project's Drive tree — the self-heal only rescues links whose folder
+  // DIES, so an out-of-tree id would otherwise be invisible forever.
+  let folderId =
+    typeof driveFolderId === "string" && driveFolderId.trim()
+      ? driveFolderId.trim()
+      : null;
+  if (folderId) {
+    try {
+      const { project, workspace } = await resolveProjectScope(projectId);
+      const token = await getDriveToken();
+      const base = await ensureProjectFolder(token, project, workspace);
+      if (folderId === base) {
+        folderId = null; // base level is stored as null
+      } else {
+        await assertInTree(token, base, folderId);
+      }
+    } catch {
+      // Covers Drive unavailable, unknown project, and out-of-tree ids alike.
+      return NextResponse.json(
+        { error: "invalid driveFolderId" },
+        { status: 400 },
+      );
+    }
+  }
+
   const link = await createLink({
     projectId,
     url: url.trim(),
     label: typeof label === "string" ? label : null,
-    // Folder placement comes from the unified browser's own listing; a stale
-    // id self-heals back to the base level on the next base listing.
-    driveFolderId: typeof driveFolderId === "string" ? driveFolderId : null,
+    driveFolderId: folderId,
   });
   return NextResponse.json({ link }, { status: 201 });
 });

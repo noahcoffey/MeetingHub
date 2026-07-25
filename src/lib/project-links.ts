@@ -57,15 +57,22 @@ export async function deleteLink(id: string): Promise<void> {
 // Drop dead folder placements: links pointing at any of these folder ids fall
 // back to the project's top level. Used when the app trashes a folder (and
 // its subtree) and by the base-listing self-heal for folders that vanished
-// out-of-band in Drive.
+// out-of-band in Drive. Project-scoped even though Drive ids are globally
+// unique — an unscoped write is too easy to widen accidentally.
 export async function rehomeLinksFromFolders(
+  projectId: string,
   folderIds: string[],
 ): Promise<void> {
   if (folderIds.length === 0) return;
   await db
     .update(projectLinks)
     .set({ driveFolderId: null })
-    .where(inArray(projectLinks.driveFolderId, folderIds));
+    .where(
+      and(
+        eq(projectLinks.projectId, projectId),
+        inArray(projectLinks.driveFolderId, folderIds),
+      ),
+    );
 }
 
 // Distinct folder ids currently referenced by a project's links (for the

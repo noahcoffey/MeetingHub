@@ -82,7 +82,7 @@ export const DELETE = auth(async (req, routeCtx) => {
       }
     }
     await trashFile(ctx.token, id);
-    await rehomeLinksFromFolders(treeIds);
+    if (projectId) await rehomeLinksFromFolders(projectId, treeIds);
     return NextResponse.json({ ok: true });
   } catch (e) {
     const res = driveError(e);

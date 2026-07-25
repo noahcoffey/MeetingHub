@@ -350,7 +350,7 @@ export async function healLinkFolders(
     folderIds.map((id) => folderAlive(token, id)),
   );
   const dead = folderIds.filter((_, i) => !alive[i]);
-  await rehomeLinksFromFolders(dead);
+  await rehomeLinksFromFolders(projectId, dead);
 }
 
 // ---- lifecycle hooks (best-effort, never throw) ----

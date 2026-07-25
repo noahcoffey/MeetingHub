@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AddLinkButton, type AddedLink } from "./add-link-button";
 import { LinkFavicon } from "./link-favicon";
 
@@ -85,9 +85,12 @@ export function FilesLinksCard({
     let cancelled = false;
     void (async () => {
       const listing = await fetchListing(null);
-      if (cancelled || !listing) return;
-      setBase({ files: listing.files, links: listing.links });
-      setDriveOk(listing.drive === "ok");
+      if (cancelled) return;
+      if (listing) {
+        setBase({ files: listing.files, links: listing.links });
+        setDriveOk(listing.drive === "ok");
+      }
+      // Loaded even on failure so the empty state can't stick on "Loading…".
       setLoaded(true);
     })();
     return () => {
@@ -120,7 +123,7 @@ export function FilesLinksCard({
     setBase((prev) => ({ ...prev, links: [...prev.links, link] }));
   }
 
-  function renderListing(listing: Listing, depth: number): React.ReactNode {
+  function renderListing(listing: Listing, depth: number): ReactNode {
     return sortedEntries(listing).map((entry) => {
       if (entry.kind === "folder") {
         const open = openFolders.has(entry.file.id);

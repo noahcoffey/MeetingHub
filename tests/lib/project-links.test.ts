@@ -46,12 +46,33 @@ describe("link folder placement", () => {
       driveFolderId: "alive-1",
     });
 
-    await rehomeLinksFromFolders(["dead-1"]);
+    await rehomeLinksFromFolders(projectId, ["dead-1"]);
     const base = await listLinksInFolder(projectId, null);
     expect(base.map((l) => l.url)).toEqual(["https://x.example"]);
     expect(
       (await listLinksInFolder(projectId, "alive-1")).map((l) => l.url),
     ).toEqual(["https://y.example"]);
+  });
+
+  it("rehome only touches the given project's links", async () => {
+    const ws2 = await makeWorkspace("Beta");
+    const otherProject = (await createProject(ws2, { name: "Q" })).id;
+    await createLink({
+      projectId,
+      url: "https://mine.example",
+      driveFolderId: "shared-id",
+    });
+    await createLink({
+      projectId: otherProject,
+      url: "https://theirs.example",
+      driveFolderId: "shared-id",
+    });
+
+    await rehomeLinksFromFolders(projectId, ["shared-id"]);
+    expect(await listLinksInFolder(projectId, "shared-id")).toHaveLength(0);
+    expect(
+      await listLinksInFolder(otherProject, "shared-id"),
+    ).toHaveLength(1);
   });
 
   it("rehome with no ids is a no-op", async () => {
@@ -60,7 +81,7 @@ describe("link folder placement", () => {
       url: "https://z.example",
       driveFolderId: "f",
     });
-    await rehomeLinksFromFolders([]);
+    await rehomeLinksFromFolders(projectId, []);
     expect(await listLinksInFolder(projectId, "f")).toHaveLength(1);
   });
 });

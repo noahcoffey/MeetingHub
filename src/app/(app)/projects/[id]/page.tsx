@@ -448,11 +448,12 @@ export default async function ProjectDetailPage({
               {filesEnabled ? (
                 <FilesLinksCard
                   projectId={project.id}
-                  initialLinks={links.map((l) => ({
-                    id: l.id,
-                    url: l.url,
-                    label: l.label,
-                  }))}
+                  // Top-level links only — folder-placed ones arrive with the
+                  // Drive listing, so pre-rendering them here would make them
+                  // visibly jump into folders once it loads.
+                  initialLinks={links
+                    .filter((l) => l.driveFolderId === null)
+                    .map((l) => ({ id: l.id, url: l.url, label: l.label }))}
                 />
               ) : (
                 <>
