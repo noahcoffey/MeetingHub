@@ -1,0 +1,1 @@
+ALTER TABLE "project_links" ADD COLUMN "drive_folder_id" text;

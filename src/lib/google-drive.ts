@@ -71,6 +71,34 @@ export async function listChildren(
   return out;
 }
 
+// Ids of all non-trashed child FOLDERS (cheap query for tree walks).
+export async function listChildFolderIds(
+  token: string,
+  parentId: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q: `'${escapeQ(parentId)}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`,
+      fields: "files(id),nextPageToken",
+      pageSize: "200",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await timedFetch(`${DRIVE_API}/files?${params.toString()}`, {
+      headers: authHeader(token),
+    });
+    if (!res.ok) throw new DriveApiError("files.list", res.status);
+    const json = (await res.json()) as {
+      files?: { id: string }[];
+      nextPageToken?: string;
+    };
+    out.push(...(json.files ?? []).map((f) => f.id));
+    pageToken = json.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+
 // First non-trashed child folder with this exact name, or null.
 export async function findChildFolder(
   token: string,

@@ -6475,3 +6475,82 @@ button.file-name-folder:hover {
   display: block;
   margin: 1px;
 }
+
+/* Files & Links overview card (compact tree; folders expand inline) */
+.flc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.flc-nested {
+  margin-left: 1.1rem;
+  border-left: 1px solid var(--border);
+  padding-left: 0.35rem;
+}
+.flc-item {
+  min-width: 0;
+}
+.flc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.28rem 0.35rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+a.flc-row:hover .flc-name {
+  text-decoration: underline;
+}
+.flc-row:hover,
+.flc-row:focus-visible {
+  background: var(--surface);
+}
+.flc-folder .flc-name {
+  font-weight: 550;
+}
+.flc-chevron {
+  flex-shrink: 0;
+  width: 0.9em;
+  color: var(--faint);
+  transition: transform 0.12s ease;
+  display: inline-block;
+}
+.flc-chevron.open {
+  transform: rotate(90deg);
+}
+.flc-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+.flc-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.flc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.flc-loading {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.35rem;
+}
+.file-degraded-note {
+  margin: 0;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 12rem;
+}

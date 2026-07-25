@@ -315,6 +315,10 @@ export const projectLinks = pgTable("project_links", {
   url: text("url").notNull(),
   // Optional display name; falls back to the URL itself when empty.
   label: text("label"),
+  // Optional placement inside the project's Drive folder tree (unified
+  // Files & Links browser). Null = the project's top level; also the
+  // self-heal fallback when the referenced folder disappears from Drive.
+  driveFolderId: text("drive_folder_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

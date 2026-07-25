@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { projects, workspaces, type Workspace } from "@/db/schema";
+import {
+  projects,
+  workspaces,
+  type Project,
+  type Workspace,
+} from "@/db/schema";
 import {
   DriveNotConnectedError,
   DriveScopeError,
@@ -33,27 +38,38 @@ export type DriveRequestContext = {
   baseFolderId: string;
 };
 
-// projectId set -> the project's folder, scoped by the project's OWN workspace
-// (deep-link safe, matching the detail-page convention). Otherwise the active
-// workspace's Files/ folder. Lazily creates whatever is missing.
+// Project row + workspace for a project-scoped request, with the feature
+// gate. Scoped by the project's OWN workspace (deep-link safe, matching the
+// detail-page convention). Exposed separately from resolveDriveContext so the
+// files GET can still serve a project's LINKS when Drive itself is
+// unavailable (not configured / not connected / revoked).
+export async function resolveProjectScope(
+  projectId: string,
+): Promise<{ project: Project; workspace: Workspace }> {
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  if (!project) throw new HttpError(404, "project not found");
+  const [workspace] = await db
+    .select()
+    .from(workspaces)
+    .where(eq(workspaces.id, project.workspaceId));
+  if (!workspace) throw new HttpError(404, "project not found");
+  if (!isFeatureEnabled(workspace, "files")) {
+    throw new HttpError(403, "files_disabled");
+  }
+  return { project, workspace };
+}
+
+// projectId set -> the project's folder; otherwise the active workspace's
+// Files/ folder. Lazily creates whatever is missing.
 export async function resolveDriveContext(
   projectId: string | null,
 ): Promise<DriveRequestContext> {
-  const token = await getDriveToken();
   if (projectId) {
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
-    if (!project) throw new HttpError(404, "project not found");
-    const [workspace] = await db
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.id, project.workspaceId));
-    if (!workspace) throw new HttpError(404, "project not found");
-    if (!isFeatureEnabled(workspace, "files")) {
-      throw new HttpError(403, "files_disabled");
-    }
+    const { project, workspace } = await resolveProjectScope(projectId);
+    const token = await getDriveToken();
     const baseFolderId = await ensureProjectFolder(token, project, workspace);
     return { token, workspace, baseFolderId };
   }
@@ -61,8 +77,20 @@ export async function resolveDriveContext(
   if (!isFeatureEnabled(workspace, "files")) {
     throw new HttpError(403, "files_disabled");
   }
+  const token = await getDriveToken();
   const folders = await ensureWorkspaceFolders(token, workspace);
   return { token, workspace, baseFolderId: folders.filesFolderId };
+}
+
+// The "Drive is unavailable but the request itself is fine" cases — the
+// project files GET degrades to links-only for these instead of erroring.
+export function driveUnavailableKey(
+  e: unknown,
+): "not_configured" | "not_connected" | "reconnect_required" | null {
+  if (e instanceof GoogleNotConfiguredError) return "not_configured";
+  if (e instanceof DriveNotConnectedError) return "not_connected";
+  if (e instanceof GoogleAuthError) return "reconnect_required";
+  return null;
 }
 
 // Map known error types to responses; null means "not ours — rethrow".

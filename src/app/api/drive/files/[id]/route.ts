@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { assertInTree, managedFolderIds } from "@/lib/drive";
-import { renameFile, trashFile } from "@/lib/google-drive";
+import { assertInTree, collectFolderTreeIds, managedFolderIds } from "@/lib/drive";
+import { FOLDER_MIME, getFileMeta, renameFile, trashFile } from "@/lib/google-drive";
+import { rehomeLinksFromFolders } from "@/lib/project-links";
 import { driveError, resolveDriveContext, type DriveRequestContext } from "../../_lib";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +71,18 @@ export const DELETE = auth(async (req, routeCtx) => {
     const ctx = await resolveDriveContext(projectId);
     const blocked = await guardTarget(ctx, id);
     if (blocked) return blocked;
+    // Trashing a folder subtree in a project orphans any links placed in it —
+    // collect the tree BEFORE trashing (children queries need it live), then
+    // re-home those links to the project's base level.
+    let treeIds: string[] = [];
+    if (projectId) {
+      const meta = await getFileMeta(ctx.token, id, "id,mimeType");
+      if (meta.mimeType === FOLDER_MIME) {
+        treeIds = await collectFolderTreeIds(ctx.token, id);
+      }
+    }
     await trashFile(ctx.token, id);
+    if (projectId) await rehomeLinksFromFolders(projectId, treeIds);
     return NextResponse.json({ ok: true });
   } catch (e) {
     const res = driveError(e);
