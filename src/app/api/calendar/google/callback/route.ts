@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { exchangeCode, fetchUserEmail } from "@/lib/google-calendar";
 import { upsertGoogleAccount } from "@/lib/google-accounts";
 import { getSingleUser } from "@/lib/webauthn";
+import { requestOrigin } from "@/lib/request-origin";
 import { OAUTH_STATE_COOKIE } from "../connect/route";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ function back(origin: string, params: Record<string, string>) {
 // code for a refresh token, records the account, and returns to Settings.
 export const GET = auth(async (req) => {
   const url = new URL(req.url);
-  const origin = url.origin;
+  const origin = requestOrigin(req);
   if (!req.auth) {
     return NextResponse.redirect(new URL("/login", origin));
   }

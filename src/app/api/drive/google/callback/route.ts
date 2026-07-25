@@ -9,6 +9,7 @@ import {
   ensureRootFolder,
 } from "@/lib/drive";
 import { getSingleUser } from "@/lib/webauthn";
+import { requestOrigin } from "@/lib/request-origin";
 import { DRIVE_OAUTH_STATE_COOKIE } from "../connect/route";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ function back(origin: string, params: Record<string, string>) {
 // MeetingHub folder, and returns to Settings -> Drive.
 export const GET = auth(async (req) => {
   const url = new URL(req.url);
-  const origin = url.origin;
+  const origin = requestOrigin(req);
   if (!req.auth) {
     return NextResponse.redirect(new URL("/login", origin));
   }

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { auth } from "@/auth";
 import { buildAuthUrl, googleConfigured } from "@/lib/google-auth";
 import { DRIVE_SCOPES, driveRedirectUri } from "@/lib/drive";
+import { requestOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const DRIVE_OAUTH_STATE_COOKIE = "g_drive_oauth_state";
 // Kick off the Google consent flow for Drive. Auth-gated: only the logged-in
 // user can connect (Google redirects back to the callback in the same session).
 export const GET = auth(async (req) => {
-  const origin = new URL(req.url).origin;
+  const origin = requestOrigin(req);
   if (!req.auth) {
     return NextResponse.redirect(new URL("/login", origin));
   }
