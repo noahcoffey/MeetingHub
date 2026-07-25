@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { auth } from "@/auth";
 import { buildAuthUrl, googleConfigured } from "@/lib/google-auth";
-import { DRIVE_SCOPES, driveRedirectUri } from "@/lib/drive";
+import {
+  DRIVE_OAUTH_STATE_COOKIE,
+  DRIVE_SCOPES,
+  driveRedirectUri,
+} from "@/lib/drive";
 import { requestOrigin } from "@/lib/request-origin";
 
 export const dynamic = "force-dynamic";
-
-// Separate cookie from the calendar flow so the two connects can't clobber
-// each other's CSRF state.
-export const DRIVE_OAUTH_STATE_COOKIE = "g_drive_oauth_state";
 
 // Kick off the Google consent flow for Drive. Auth-gated: only the logged-in
 // user can connect (Google redirects back to the callback in the same session).

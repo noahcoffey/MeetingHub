@@ -51,6 +51,12 @@ export const DRIVE_SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
 ].join(" ");
 
+// One-shot CSRF state cookie for the Drive connect flow — separate from the
+// calendar flow's cookie so the two connects can't clobber each other. Lives
+// here (not in the route file) because Next's dev-generated route types
+// reject non-handler exports from route.ts.
+export const DRIVE_OAUTH_STATE_COOKIE = "g_drive_oauth_state";
+
 export function driveRedirectUri(origin: string): string {
   return (
     process.env.GOOGLE_DRIVE_REDIRECT_URI ||
