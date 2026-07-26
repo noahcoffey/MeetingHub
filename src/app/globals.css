@@ -6554,3 +6554,208 @@ a.flc-row:hover .flc-name {
   flex: 1;
   min-width: 12rem;
 }
+
+/* drag & drop (Files & Links browser + overview card) */
+.file-row.is-draggable,
+.flc-item.is-draggable {
+  cursor: grab;
+}
+.file-row.is-dragging,
+.flc-item.is-dragging {
+  opacity: 0.45;
+}
+.file-row.drop-hover,
+.file-crumb.drop-hover,
+.flc-row.drop-hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+}
+
+/* ---- Mobile app chrome: bottom tab bar + More sheet (≤820px) ---- */
+.mobile-tabs {
+  display: none;
+}
+.mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 54px;
+  min-width: 0;
+  padding: 6px 2px calc(4px);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.62rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+}
+.mobile-tab-icon {
+  position: relative;
+  display: inline-flex;
+}
+.mobile-tab-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.mobile-tab.is-active {
+  color: var(--accent);
+}
+.mobile-tab-badge {
+  position: absolute;
+  top: -5px;
+  right: -9px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 650;
+  line-height: 15px;
+  text-align: center;
+}
+.mobile-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+.mobile-sheet {
+  width: 100%;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding: 0.35rem 0.75rem calc(4.4rem + env(safe-area-inset-bottom));
+  animation: mh-sheet-up 0.18s ease;
+}
+@keyframes mh-sheet-up {
+  from {
+    transform: translateY(10%);
+    opacity: 0.5;
+  }
+}
+.mobile-sheet-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong, var(--border));
+  margin: 0.4rem auto 0.55rem;
+}
+.mobile-sheet-link {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 48px;
+  padding: 0.55rem 0.6rem;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.mobile-sheet-link svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.mobile-sheet-link.is-active,
+.mobile-sheet-link.is-active svg {
+  color: var(--accent);
+}
+.mobile-sheet-link:active {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.mobile-sheet-link .open-count {
+  margin-left: auto;
+}
+
+@media (max-width: 820px) {
+  /* Nav lives in the bottom tab bar; the top bar keeps brand/search/account. */
+  .app-sidebar .side-nav {
+    display: none;
+  }
+  /* Standalone-PWA insets: keep the top bar out of the notch... */
+  .app-sidebar {
+    padding-top: calc(0.55rem + env(safe-area-inset-top));
+    padding-left: calc(0.9rem + env(safe-area-inset-left));
+    padding-right: calc(0.9rem + env(safe-area-inset-right));
+  }
+  /* ...and give content room above the tab bar + home indicator. */
+  .app-main {
+    padding-bottom: calc(4.2rem + env(safe-area-inset-bottom));
+  }
+  .mobile-tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    align-items: stretch;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* Comfortable thumb targets in the top bar. */
+  .icon-btn {
+    width: 2.6rem;
+    height: 2.6rem;
+  }
+  /* Icon-only top-bar controls — the text labels wrap and eat the bar. */
+  .sidebar-foot .side-label,
+  .theme-toggle-label {
+    display: none;
+  }
+  .logout-button {
+    white-space: nowrap;
+  }
+  /* Task rows: title takes the full line, meta pills wrap underneath instead
+     of crushing the title to a column of letters. */
+  .ai-body {
+    flex-wrap: wrap;
+  }
+  .ai-body .ai-content {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .ai-item .ai-meta-row {
+    margin-top: 0;
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- Touch polish ---- */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+/* iOS zooms into any focused field under 16px — hold the line on phones. */
+@media (max-width: 820px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+/* Hover-revealed controls must simply be visible where hover doesn't exist. */
+@media (hover: none) {
+  .ai-del,
+  .link-remove,
+  .note-remove,
+  .file-actions {
+    opacity: 1;
+  }
+}

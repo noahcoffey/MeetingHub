@@ -54,6 +54,29 @@ export async function deleteLink(id: string): Promise<void> {
   await db.delete(projectLinks).where(eq(projectLinks.id, id));
 }
 
+export async function getLinkById(
+  id: string,
+): Promise<ProjectLink | undefined> {
+  const [link] = await db
+    .select()
+    .from(projectLinks)
+    .where(eq(projectLinks.id, id));
+  return link;
+}
+
+// Move a link to another folder placement (null = the project's top level).
+export async function setLinkFolder(
+  id: string,
+  driveFolderId: string | null,
+): Promise<ProjectLink | undefined> {
+  const [link] = await db
+    .update(projectLinks)
+    .set({ driveFolderId })
+    .where(eq(projectLinks.id, id))
+    .returning();
+  return link;
+}
+
 // Drop dead folder placements: links pointing at any of these folder ids fall
 // back to the project's top level. Used when the app trashes a folder (and
 // its subtree) and by the base-listing self-heal for folders that vanished

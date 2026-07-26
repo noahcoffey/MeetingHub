@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { assertInTree, collectFolderTreeIds, managedFolderIds } from "@/lib/drive";
-import { FOLDER_MIME, getFileMeta, renameFile, trashFile } from "@/lib/google-drive";
+import { FOLDER_MIME, getFileMeta, moveFile, renameFile, trashFile } from "@/lib/google-drive";
 import { rehomeLinksFromFolders } from "@/lib/project-links";
 import { driveError, resolveDriveContext, type DriveRequestContext } from "../../_lib";
 
@@ -27,7 +27,8 @@ async function guardTarget(
   return null;
 }
 
-// Rename ({ name, projectId? }).
+// Rename ({ name, projectId? }) or move ({ parentId, projectId? }) — the
+// drag-and-drop move sends parentId: the destination folder (or the base).
 export const PATCH = auth(async (req, routeCtx) => {
   if (!req.auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -39,9 +40,10 @@ export const PATCH = auth(async (req, routeCtx) => {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const b = body as { name?: unknown; projectId?: unknown };
+  const b = body as { name?: unknown; parentId?: unknown; projectId?: unknown };
   const name = typeof b.name === "string" ? b.name.trim() : "";
-  if (!name || name.length > 255) {
+  const parentId = typeof b.parentId === "string" ? b.parentId.trim() : "";
+  if (!parentId && (!name || name.length > 255)) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
   const projectId = typeof b.projectId === "string" ? b.projectId : null;
@@ -50,6 +52,23 @@ export const PATCH = auth(async (req, routeCtx) => {
     const ctx = await resolveDriveContext(projectId);
     const blocked = await guardTarget(ctx, id);
     if (blocked) return blocked;
+    if (parentId) {
+      // Destination must be the base or a folder inside this tree. (The UI
+      // only drags non-folders; a crafted circular folder move is rejected
+      // by Drive itself.)
+      if (parentId !== ctx.baseFolderId) {
+        await assertInTree(ctx.token, ctx.baseFolderId, parentId);
+        const destMeta = await getFileMeta(ctx.token, parentId, "id,mimeType");
+        if (destMeta.mimeType !== FOLDER_MIME) {
+          return NextResponse.json(
+            { error: "destination is not a folder" },
+            { status: 400 },
+          );
+        }
+      }
+      await moveFile(ctx.token, id, parentId);
+      return NextResponse.json({ ok: true });
+    }
     const file = await renameFile(ctx.token, id, name);
     return NextResponse.json({ file });
   } catch (e) {
