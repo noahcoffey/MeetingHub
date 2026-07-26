@@ -5,6 +5,7 @@ import { getActiveWorkspace } from "@/lib/workspace-context";
 import { listWorkspaces } from "@/lib/workspaces";
 import { LogoutButton } from "../logout-button";
 import { SideNav } from "./side-nav";
+import { MobileTabBar } from "./mobile-tab-bar";
 import { ChromeProvider, SidebarToggle } from "./chrome";
 import { CommandPalette, SearchTrigger } from "./command-palette";
 import { ThemeToggle } from "./theme-toggle";
@@ -55,6 +56,11 @@ export default async function AppLayout({
         </div>
       </aside>
       <main className="app-main">{children}</main>
+      <MobileTabBar
+        taskOpen={counts.open}
+        taskDueToday={counts.dueToday}
+        disabledFeatures={activeWorkspace.disabledFeatures}
+      />
       <CommandPalette
         workspaceName={workspaces.find((w) => w.id === workspaceId)?.name}
       />

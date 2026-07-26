@@ -14,11 +14,24 @@ const uiFont = Hanken_Grotesk({
 export const metadata: Metadata = {
   title: "Meeting Hub",
   description: "Personal meeting notes and action items",
+  // Installed-PWA behavior on iOS (Android reads manifest.ts instead).
+  appleWebApp: {
+    capable: true,
+    title: "MeetingHub",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // cover + safe-area-inset-* CSS keeps the app out from under the notch and
+  // home indicator when installed to a phone home screen.
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0c0f" },
+  ],
 };
 
 export default async function RootLayout({

@@ -51,6 +51,13 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   via `lib/app-settings.ts`). Route-group
   `loading.tsx`/`error.tsx`/`not-found.tsx` boundaries live at the
   `(app)/` root; deleting an action item shows an Undo toast for 5s before the DELETE fires.
+- **Mobile chrome** (≤820px): the sidebar's nav hides and a native-style bottom tab bar takes over
+  (`(app)/mobile-tab-bar.tsx` — Dashboard/Meetings/Tasks/Projects + a "More" sheet; item defs
+  shared with `side-nav.tsx` via `(app)/nav-items.tsx`; feature-toggle filtered). The app is an
+  installable PWA: `src/app/manifest.ts` (standalone display; `manifest.webmanifest` is excluded
+  from the middleware matcher) + `public/icon*.svg`, `appleWebApp` meta and safe-area-inset CSS in
+  the root layout/globals. Touch rules live at the end of `globals.css` (16px inputs ≤820px,
+  hover-revealed controls forced visible under `@media (hover: none)`).
 - `drizzle/` — generated migrations (committed).
 
 ## Commands

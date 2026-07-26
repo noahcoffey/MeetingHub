@@ -79,6 +79,6 @@ export default auth((req) => {
 // run), and Next static assets.
 export const config = {
   matcher: [
-    "/((?!api/auth|api/health|api/ingest|api/v1|api/mcp|api/oauth|api/webauthn/authenticate|\\.well-known|openapi\\.yaml|api-docs\\.html|_next/static|_next/image|favicon\\.ico|icon|apple-icon).*)",
+    "/((?!api/auth|api/health|api/ingest|api/v1|api/mcp|api/oauth|api/webauthn/authenticate|\\.well-known|openapi\\.yaml|api-docs\\.html|manifest\\.webmanifest|_next/static|_next/image|favicon\\.ico|icon|apple-icon).*)",
   ],
 };
