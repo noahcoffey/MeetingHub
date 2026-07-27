@@ -56,8 +56,12 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   shared with `side-nav.tsx` via `(app)/nav-items.tsx`; feature-toggle filtered). The app is an
   installable PWA: `src/app/manifest.ts` (standalone display; `manifest.webmanifest` is excluded
   from the middleware matcher) + `public/icon*.svg`, `appleWebApp` meta and safe-area-inset CSS in
-  the root layout/globals. Touch rules live at the end of `globals.css` (16px inputs ≤820px,
-  hover-revealed controls forced visible under `@media (hover: none)`).
+  the root layout/globals. Touch rules live at the end of `globals.css` (16px root type and
+  16px inputs ≤820px, hover-revealed controls forced visible under `@media (hover: none)`).
+  The page must never be wider than the viewport there — horizontal overflow makes the whole app
+  pannable and drags the sticky top bar off screen with it — so `html` is `overflow-x: clip`
+  ≤820px and dense rows (meeting rows, task meta pills, segmented toggles, detail title rows)
+  wrap instead of shrinking. Verify new mobile layout at 320/360/390px, not just 390.
 - `drizzle/` — generated migrations (committed).
 
 ## Commands

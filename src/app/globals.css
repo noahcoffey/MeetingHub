@@ -94,6 +94,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Phones sit further from the eye than a laptop and 15px reads small there.
+   Bumping the root scales every rem-based size in the app in one step. */
+@media (max-width: 820px) {
+  html,
+  body {
+    font-size: 16px;
+  }
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
@@ -566,6 +575,9 @@ button {
 }
 .day-task-content {
   flex: 1;
+  min-width: 0;
+  /* task text often carries a pasted URL — break it instead of widening the row */
+  overflow-wrap: anywhere;
   font-size: 0.9rem;
   color: var(--text);
 }
@@ -573,6 +585,7 @@ a.day-task-content:hover {
   color: var(--accent);
 }
 .day-task-due {
+  flex-shrink: 0;
   font-size: 0.72rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1979,6 +1992,8 @@ input[type="checkbox"]:focus-visible {
 }
 .meeting-title {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 500;
 }
 .badge {
@@ -6680,12 +6695,23 @@ a.flc-row:hover .flc-name {
 }
 
 @media (max-width: 820px) {
+  /* Nothing on a phone may make the page wider than the viewport. One long
+     token (a URL pasted into a task, a toolbar that refuses to wrap) used to
+     turn the whole app into a side-to-side pannable surface — and because the
+     top bar is only viewport-wide, panning right left it pinned half off
+     screen. `clip` rather than `hidden`: it keeps the viewport as the scroll
+     container, so the sticky top bar still sticks. */
+  html {
+    overflow-x: clip;
+  }
   /* Nav lives in the bottom tab bar; the top bar keeps brand/search/account. */
   .app-sidebar .side-nav {
     display: none;
   }
   /* Standalone-PWA insets: keep the top bar out of the notch... */
   .app-sidebar {
+    /* above page content, below the tab bar (60) and the overlays (80/100) */
+    z-index: 50;
     padding-top: calc(0.55rem + env(safe-area-inset-top));
     padding-left: calc(0.9rem + env(safe-area-inset-left));
     padding-right: calc(0.9rem + env(safe-area-inset-right));
@@ -6693,6 +6719,18 @@ a.flc-row:hover .flc-name {
   /* ...and give content room above the tab bar + home indicator. */
   .app-main {
     padding-bottom: calc(4.2rem + env(safe-area-inset-bottom));
+  }
+  /* Long unbroken strings (a pasted URL, an ID) wrap instead of setting the
+     page's min width. `anywhere` rather than `break-word` because only
+     `anywhere` counts against intrinsic sizing — that is what stops a URL from
+     widening the flex track it sits in. Kept to the surfaces that carry real
+     prose; on short labels it would let the track squeeze to one character. */
+  .notes-prose,
+  .desc-text,
+  .month-row-title,
+  .cmdk-title,
+  .cmdk-sub {
+    overflow-wrap: anywhere;
   }
   .mobile-tabs {
     position: fixed;
@@ -6723,6 +6761,11 @@ a.flc-row:hover .flc-name {
   .logout-button {
     white-space: nowrap;
   }
+  /* The avatar carries no information here (single user, email hidden) and it
+     was the chip that tipped the top bar over its width. */
+  .sidebar-foot .user-chip {
+    display: none;
+  }
   /* Task rows: title takes the full line, meta pills wrap underneath instead
      of crushing the title to a column of letters. */
   .ai-body {
@@ -6735,6 +6778,57 @@ a.flc-row:hover .flc-name {
   .ai-item .ai-meta-row {
     margin-top: 0;
     flex-wrap: wrap;
+    /* `flex-shrink: 0` on its own keeps the row at max-content, so wrapping
+       never engages and the pills run off a narrow phone. Fill the line. */
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  /* Meeting rows: same treatment — title on its own line, time and badges
+     wrapping under it rather than squeezing the title to one word per line. */
+  .meeting-row {
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 0.65rem;
+  }
+  .meeting-title {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  .month-row {
+    flex-wrap: wrap;
+    gap: 0.15rem 0.9rem;
+  }
+  .month-row-main {
+    order: -1;
+    flex: 1 1 100%;
+  }
+  /* Segmented controls (Tasks' Group by / view switches, the day toolbar's
+     date cluster) are wider than a small phone; let them wrap rather than
+     push the page out. */
+  .range-toggle,
+  .head-controls {
+    flex-wrap: wrap;
+  }
+  .date-nav {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  /* Meeting/journal header: the project chip, Past meetings tab and save
+     indicator drop below the title instead of running past the right edge. */
+  .detail-title-row {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  /* First child is the title (an <h1>, or the note-title input). Only give it
+     the whole line where a real action cluster follows — where the row is just
+     title + save indicator there is room for both. */
+  .detail-title-row:has(.detail-title-actions) > :first-child {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .detail-title-actions {
+    flex-wrap: wrap;
+    gap: 0.6rem;
   }
 }
 
