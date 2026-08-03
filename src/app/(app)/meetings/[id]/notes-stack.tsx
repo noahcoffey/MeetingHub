@@ -14,6 +14,70 @@ function clampSplit(f: number): number {
   return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, f));
 }
 
+// Drag-resizable split between two stacked sections: the fraction of the
+// container height given to the first section. Persisted globally, so the
+// split carries across meetings.
+function useResizableSplit(containerRef: React.RefObject<HTMLDivElement | null>) {
+  const [split, setSplitState] = useState(SPLIT_DEFAULT);
+  const [dragging, setDragging] = useState(false);
+
+  // Read persisted split after mount (avoids SSR/hydration mismatch).
+  useEffect(() => {
+    const f = Number(localStorage.getItem(SPLIT_KEY));
+    if (Number.isFinite(f) && f > 0) setSplitState(clampSplit(f));
+  }, []);
+
+  function setSplit(f: number, opts?: { persist?: boolean }) {
+    const clamped = clampSplit(f);
+    setSplitState(clamped);
+    if (opts?.persist) {
+      try {
+        localStorage.setItem(SPLIT_KEY, String(clamped));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function onDividerPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    e.preventDefault(); // no text selection while dragging
+    const height = containerRef.current?.getBoundingClientRect().height;
+    if (!height) return;
+    const startY = e.clientY;
+    const startSplit = split;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+
+    const onMove = (ev: PointerEvent) => {
+      setSplit(startSplit + (ev.clientY - startY) / height);
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      setDragging(false);
+      setSplit(startSplit + (ev.clientY - startY) / height, { persist: true });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
+  function onDividerKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "ArrowUp") setSplit(split - 0.05, { persist: true });
+    else if (e.key === "ArrowDown") setSplit(split + 0.05, { persist: true });
+    else return;
+    e.preventDefault();
+  }
+
+  function resetSplit() {
+    setSplit(SPLIT_DEFAULT, { persist: true });
+  }
+
+  return { split, dragging, onDividerPointerDown, onDividerKeyDown, resetSplit };
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -63,61 +127,9 @@ export function NotesStack({
   const [genOpen, setGenOpen] = useState(hasGenerated && matches(generated));
   const addActionItem = useAddActionItem({ meetingId });
 
-  // Fraction of the stack height given to Notes when both sections are open.
-  // Persisted globally, so the split carries across meetings.
-  const [split, setSplitState] = useState(SPLIT_DEFAULT);
-  const [dragging, setDragging] = useState(false);
   const stackRef = useRef<HTMLDivElement>(null);
-
-  // Read persisted split after mount (avoids SSR/hydration mismatch).
-  useEffect(() => {
-    const f = Number(localStorage.getItem(SPLIT_KEY));
-    if (Number.isFinite(f) && f > 0) setSplitState(clampSplit(f));
-  }, []);
-
-  function setSplit(f: number, opts?: { persist?: boolean }) {
-    const clamped = clampSplit(f);
-    setSplitState(clamped);
-    if (opts?.persist) {
-      try {
-        localStorage.setItem(SPLIT_KEY, String(clamped));
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  function onDividerPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.button !== 0) return;
-    e.preventDefault(); // no text selection while dragging
-    const height = stackRef.current?.getBoundingClientRect().height;
-    if (!height) return;
-    const startY = e.clientY;
-    const startSplit = split;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragging(true);
-
-    const onMove = (ev: PointerEvent) => {
-      setSplit(startSplit + (ev.clientY - startY) / height);
-    };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      setDragging(false);
-      setSplit(startSplit + (ev.clientY - startY) / height, { persist: true });
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  }
-
-  function onDividerKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "ArrowUp") setSplit(split - 0.05, { persist: true });
-    else if (e.key === "ArrowDown") setSplit(split + 0.05, { persist: true });
-    else return;
-    e.preventDefault();
-  }
+  const { split, dragging, onDividerPointerDown, onDividerKeyDown, resetSplit } =
+    useResizableSplit(stackRef);
 
   // The proportional split only applies while both sections are open; with one
   // collapsed the open section fills via the base CSS.
@@ -126,6 +138,7 @@ export function NotesStack({
   return (
     <div className="notes-stack" ref={stackRef}>
       <section
+        id="nsec-notes"
         className={`nsec ${notesOpen ? "open" : "collapsed"}`}
         style={bothOpen ? { flexGrow: split } : undefined}
       >
@@ -159,13 +172,14 @@ export function NotesStack({
           role="separator"
           aria-orientation="horizontal"
           aria-label="Resize notes split"
+          aria-controls="nsec-notes"
           aria-valuemin={Math.round(SPLIT_MIN * 100)}
           aria-valuemax={Math.round(SPLIT_MAX * 100)}
           aria-valuenow={Math.round(split * 100)}
           tabIndex={0}
           title="Drag to resize · double-click to reset"
           onPointerDown={onDividerPointerDown}
-          onDoubleClick={() => setSplit(SPLIT_DEFAULT, { persist: true })}
+          onDoubleClick={resetSplit}
           onKeyDown={onDividerKeyDown}
         />
       )}
