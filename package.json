@@ -19,7 +19,7 @@
     "auth:reset": "tsx src/db/auth-reset.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "@tiptap/extension-placeholder": "^3.28.0",
