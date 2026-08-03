@@ -12,3 +12,6 @@ docker-compose*.yml
 *.md
 .DS_Store
 *.tsbuildinfo
+
+# Local runner sub-packages — not part of the app image/build
+tools

@@ -135,4 +135,23 @@ export const NAV_ITEMS: NavItem[] = [
       </>
     ),
   },
+  {
+    // No feature key: like Tasks, always visible. Which workspaces actually
+    // get summaries is decided by the local runner's config; a workspace the
+    // runner skips just shows the empty state.
+    href: "/summaries",
+    label: "Summaries",
+    match: (p: string) => p.startsWith("/summaries"),
+    icon: (
+      <>
+        <path
+          d="M4 4.5a1 1 0 011-1h10a1 1 0 011 1v11a1 1 0 01-1 1H5a1 1 0 01-1-1v-11z"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path d="M7 7.5h6M7 10h6M7 12.5h3.5" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="13.75" cy="13.75" r="0.4" strokeWidth="1.2" />
+      </>
+    ),
+  },
 ];

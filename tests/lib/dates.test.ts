@@ -7,6 +7,7 @@ import {
   shiftDate,
   shiftMonth,
   startOfDayUtc,
+  startOfWeek,
 } from "@/lib/dates";
 
 describe("isValidDateParam", () => {
@@ -25,6 +26,18 @@ describe("isWeekendDateStr", () => {
     expect(isWeekendDateStr("2026-07-12")).toBe(true); // Sun
     expect(isWeekendDateStr("2026-07-10")).toBe(false); // Fri
     expect(isWeekendDateStr("2026-07-13")).toBe(false); // Mon
+  });
+});
+
+describe("startOfWeek", () => {
+  it("returns the Monday of the containing week", () => {
+    expect(startOfWeek("2026-08-03")).toBe("2026-08-03"); // Mon → itself
+    expect(startOfWeek("2026-08-05")).toBe("2026-08-03"); // Wed
+    expect(startOfWeek("2026-08-09")).toBe("2026-08-03"); // Sun → previous Mon
+  });
+  it("crosses month and year boundaries", () => {
+    expect(startOfWeek("2026-08-01")).toBe("2026-07-27"); // Sat, week starts in July
+    expect(startOfWeek("2027-01-01")).toBe("2026-12-28"); // Fri, week starts in prior year
   });
 });
 

@@ -23,7 +23,7 @@ import {
   type ActionItem,
   type NewActionItem,
 } from "@/db/schema";
-import { todayInAppTz } from "./dates";
+import { endOfDayUtc, startOfDayUtc, todayInAppTz } from "./dates";
 import { nextOccurrence, type RecurrenceUnit } from "./recurrence";
 
 export type ActionItemInput = {
@@ -232,6 +232,28 @@ export async function listDoneActionItems(
       and(
         eq(actionItems.workspaceId, workspaceId),
         eq(actionItems.status, "done"),
+      ),
+    )
+    .orderBy(desc(actionItems.completedAt));
+}
+
+// Done items completed inside [from, to] (app-tz day bounds) — the weekly
+// summary's last-week review. listDoneActionItems returns all history, which
+// grows unbounded; this stays a bounded query.
+export async function listDoneActionItemsInRange(
+  workspaceId: string,
+  from: string,
+  to: string,
+): Promise<ActionItem[]> {
+  return db
+    .select()
+    .from(actionItems)
+    .where(
+      and(
+        eq(actionItems.workspaceId, workspaceId),
+        eq(actionItems.status, "done"),
+        gte(actionItems.completedAt, startOfDayUtc(from)),
+        lt(actionItems.completedAt, endOfDayUtc(to)),
       ),
     )
     .orderBy(desc(actionItems.completedAt));
