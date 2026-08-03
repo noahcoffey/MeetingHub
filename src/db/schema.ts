@@ -788,6 +788,31 @@ export const taskDependencies = pgTable(
   (t) => [unique().on(t.taskId, t.dependsOnId)],
 );
 
+// ---- weekly summaries ----
+// One AI-generated "Sunday Summary" per workspace per week. Generated OUTSIDE
+// the app by the local runner (tools/sunday-summary) and pushed via
+// PUT /api/v1/summaries; the app only stores and renders them.
+export const weeklySummaries = pgTable(
+  "weekly_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    weekStart: date("week_start").notNull(), // Monday (YYYY-MM-DD) of the week the summary preps
+    markdown: text("markdown").notNull(),
+    model: text("model"), // reported by the runner; null if it didn't say
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [unique().on(t.workspaceId, t.weekStart)],
+);
+
 // ---- inferred types ----
 export type OauthClient = typeof oauthClients.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
@@ -813,3 +838,4 @@ export type JournalStatValue = typeof journalStatValues.$inferSelect;
 export type WebauthnCredential = typeof webauthnCredentials.$inferSelect;
 export type RecoveryCode = typeof recoveryCodes.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
+export type WeeklySummary = typeof weeklySummaries.$inferSelect;

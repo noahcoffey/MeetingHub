@@ -36,7 +36,8 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   `projects.ts` (+ `project-links.ts`), `notes.ts`, `people.ts`, `task-dependencies.ts`, `dashboard.ts`,
   `ics-calendar.ts`, `ingest.ts`, `search.ts`, `webauthn.ts`, `login-throttle.ts`, `dates.ts`,
   `google-auth.ts` (shared Google OAuth plumbing) + `google-calendar.ts` / `google-drive.ts` +
-  `drive.ts` (Drive folder hierarchy/protection — see "Drive files" below).
+  `drive.ts` (Drive folder hierarchy/protection — see "Drive files" below),
+  `summaries.ts` + `summary-context.ts` (Sunday-Summary storage + the week-context aggregate).
 - `src/app/(app)/` — the authed UI: Dashboard landing page (`page.tsx`, aggregates via
   `lib/dashboard.ts`, auto-refreshes every 60s), day meeting workspace (`meetings/` + `meetings/[id]`),
   `projects/` (list + `[id]` hub page), `people/` (list + `[id]` hub: matched meetings, agenda
@@ -44,7 +45,9 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   attachments rail), `journal/`, `tasks/` (Open/Completed/Dependencies views;
   Open supports Group By due date/created/project/priority/waiting, plus a collapsed
   "Scheduled & snoozed" section), `reports/` (charts over journal meta, completed action items +
-  meeting load), and `settings/` (`security`, `incoming` notes review, `hidden` titles,
+  meeting load), `summaries/` (weekly Sunday-Summary briefings, rendered read-only via
+  `MarkdownView`; always in the nav — per-workspace enablement lives in the runner's config,
+  not an app toggle), and `settings/` (`security`, `incoming` notes review, `hidden` titles,
   `skipped` meetings, and a hidden `advanced` screen whose nav item only shows while holding "A" —
   its toggles hide all generated notes/Notes+ references incl. the Incoming screen, and anxiety
   (journal Meta scale, dashboard card, reports chart), backed by the `app_settings` key/value table
@@ -183,6 +186,12 @@ Defined in `src/db/schema.ts`. Core tables:
   reports charts.
 - `pending_ingests` — ingest pushes that didn't match a meeting; reviewed under Settings → Incoming.
 - `hidden_meeting_titles` — exact-title hide rules applied to the calendar list.
+- `weekly_summaries` — one AI-written "Sunday Summary" per workspace per week, keyed unique
+  `(workspace_id, week_start)` (`week_start` = the Monday being prepped; FK restrict like other
+  content tables). Generated OUTSIDE the app by `tools/sunday-summary` (a launchd-scheduled local
+  runner) from `GET /api/v1/summary-context` (one aggregate in `lib/summary-context.ts` — disabled
+  workspace features → null sections), pushed via upserting `PUT /api/v1/summaries`, rendered under
+  `/summaries`. Which workspaces get summaries is the runner's config — no app-side toggle.
 - Action-items UI: `(app)/action-items-list.tsx` is the shared client list — shows ALL open items.
   Default grouping is **this meeting/entry → overdue → due today → this week → next week → later
   (incl. undated)** (the meeting rail passes `currentMeetingId`, the journal rail
@@ -266,9 +275,14 @@ exposure yet (follow-up).
 
 ## Out of scope (do not build)
 
-AI synthesis/digests (note ingest is built; *generating* notes here is not), task-manager migration,
-semantic/vector search, bidirectional links/graph, multi-user/sharing.
+AI synthesis/digests **inside the app** (note ingest and weekly-summary storage/serving are built;
+*generation* always happens outside — AI notes are pushed via `/api/ingest`, and the Sunday
+Summary is produced by the local agent in `tools/sunday-summary` and pushed via
+`PUT /api/v1/summaries`; never add an LLM dependency or scheduler to the app), task-manager
+migration, semantic/vector search, bidirectional links/graph, multi-user/sharing.
 
 ## Companion docs
 
-`README.md` (setup/deploy), `API.md` (`/api/v1` token API), `INGEST_API.md` (note-ingest push contract).
+`README.md` (setup/deploy), `API.md` (`/api/v1` token API), `INGEST_API.md` (note-ingest push
+contract), `tools/sunday-summary/README.md` (the local Sunday-Summary agent: config, manual runs,
+launchd schedule).

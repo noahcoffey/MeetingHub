@@ -1,0 +1,8 @@
+{
+  "baseUrl": "https://meetinghub.example.com",
+  "apiToken": "mh_...",
+  "anthropicApiKey": "",
+  "model": "claude-opus-5",
+  "maxOutputTokens": 8000,
+  "workspaces": ["Work"]
+}

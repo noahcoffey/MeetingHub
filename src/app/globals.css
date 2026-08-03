@@ -6853,3 +6853,12 @@ html {
     opacity: 1;
   }
 }
+
+/* ---- summaries page ---- */
+.summary-view {
+  max-width: 46rem;
+}
+.summary-meta {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+}
