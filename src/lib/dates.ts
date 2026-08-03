@@ -50,6 +50,14 @@ export function shiftDate(dateStr: string, deltaDays: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+// Monday of the calendar week containing `dateStr` (calendar math, tz-agnostic).
+export function startOfWeek(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun .. 6=Sat
+  const sinceMonday = (dow + 6) % 7;
+  return shiftDate(dateStr, -sinceMonday);
+}
+
 // First day of the month `deltaMonths` away from dateStr's month. Always lands
 // on the 1st so month stepping can't drift on short months.
 export function shiftMonth(dateStr: string, deltaMonths: number): string {
