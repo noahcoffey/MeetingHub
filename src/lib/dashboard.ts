@@ -11,7 +11,7 @@ import {
 import { listProjects } from "./projects";
 import { listOpenDatedMilestones } from "./milestones";
 import { isFeatureEnabled } from "./workspaces";
-import { hourInAppTz, shiftDate, todayInAppTz } from "./dates";
+import { hourInAppTz, shiftDate, startOfWeek, todayInAppTz } from "./dates";
 import type { Workspace } from "@/db/schema";
 
 export type TrendDirection = "up" | "down" | "flat";
@@ -34,14 +34,6 @@ function toneForDirection(d: StatDirection): "prod" | "anx" | "neutral" {
   if (d === "good") return "prod";
   if (d === "bad") return "anx";
   return "neutral";
-}
-
-// Monday of the app-tz calendar week containing `dateStr`.
-function startOfWeek(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun .. 6=Sat
-  const sinceMonday = (dow + 6) % 7;
-  return shiftDate(dateStr, -sinceMonday);
 }
 
 export type SparkPoint = { date: string; value: number | null };
