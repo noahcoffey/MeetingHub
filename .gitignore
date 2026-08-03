@@ -39,3 +39,7 @@ yarn-error.log*
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Sunday-Summary runner (tools/sunday-summary): local deps + secret config
+tools/sunday-summary/node_modules/
+tools/sunday-summary/config.json

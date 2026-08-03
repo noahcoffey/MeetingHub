@@ -1,0 +1,18 @@
+{
+  "name": "sunday-summary",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local Sunday Summary agent for Meeting Hub: reads the /api/v1 summary context, writes a weekly briefing with Claude, pushes it back.",
+  "type": "module",
+  "scripts": {
+    "run": "tsx run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

@@ -14,6 +14,7 @@ const CONTENT_TABLES = [
   "oauth_codes",
   "oauth_clients",
   "api_tokens",
+  "weekly_summaries",
   "task_dependencies",
   "action_items",
   "note_projects",

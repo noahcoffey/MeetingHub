@@ -19,13 +19,13 @@
     "auth:reset": "tsx src/db/auth-reset.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "@tiptap/extension-placeholder": "^3.28.0",
     "@tiptap/extension-task-item": "^3.29.0",
-    "@tiptap/extension-task-list": "^3.28.0",
-    "@tiptap/pm": "^3.29.0",
+    "@tiptap/extension-task-list": "^3.29.2",
+    "@tiptap/pm": "^3.29.2",
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.28.0",
     "bcryptjs": "^3.0.3",
@@ -49,7 +49,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^15.5.21",
+    "eslint-config-next": "^15.5.22",
     "typescript": "^5.7.2",
     "vitest": "^4.1.10"
   },

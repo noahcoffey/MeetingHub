@@ -75,6 +75,10 @@ on.
 | POST | `/api/v1/notes?workspace=` | `{ title?, body?, projectId?, meetingId? }` (same-workspace attach at create only) |
 | GET | `/api/v1/notes/:id` | Full row; body is in `notes` |
 | PATCH | `/api/v1/notes/:id` | `{ title?, body? }` |
+| GET | `/api/v1/summary-context?workspace=&weekStart=` | Aggregate week payload for the Sunday-Summary runner |
+| GET | `/api/v1/summaries?workspace=` | Weekly summaries, meta only (no markdown), newest week first |
+| PUT | `/api/v1/summaries?workspace=` | Upsert a summary by `(workspace, weekStart)` — 201 created / 200 overwritten |
+| GET | `/api/v1/summaries/:id` | Full row incl. `markdown` |
 
 Responses: lists are `{ items: [...] }`, single rows `{ item: {...} }`,
 creates return 201. Dates are ISO 8601; day-scoped fields (`dueDate`,
@@ -103,6 +107,33 @@ Task fields on create/update: `content` (required on create), `dueDate`,
 `priority` (1=high 2=medium 3=low, null clears), `ownerName` (marks the task
 waiting-on), `recurrenceUnit` (`day|weekday|week|month|year`) +
 `recurrenceInterval`, `snoozedUntil`, `status` (`open`/`done`).
+
+## Weekly summaries
+
+Storage/serving for the **Sunday Summary** — an AI-written weekly briefing
+generated *outside* the app by the local runner in `tools/sunday-summary`
+(see its README). The app never calls an LLM; these endpoints just move data.
+
+- `weekStart` must be a **Monday** (`YYYY-MM-DD`) — it keys the summary to the
+  week it prepares for. Non-Mondays 400.
+- `GET /api/v1/summary-context` assembles everything the runner's prompt
+  needs in one payload: week-ahead meetings/tasks/milestones, last week's
+  completed tasks + meetings + journal excerpts, stale waiting-on items,
+  agenda queues for people being met, and meeting-load trends. `weekStart`
+  defaults to the Monday of *tomorrow*'s week. Sections for disabled workspace
+  features are `null` (vs. `[]` = enabled but empty); no note bodies are
+  included, journal notes are capped excerpts.
+- `PUT /api/v1/summaries` upserts, so the runner can re-run safely:
+
+```bash
+curl -X PUT -H "Authorization: Bearer mh_..." \
+  -H "Content-Type: application/json" \
+  -d '{"weekStart": "2026-08-03", "markdown": "# Week of Aug 3\n...", "model": "claude-opus-5"}' \
+  "https://<host>/api/v1/summaries?workspace=<uuid>"
+```
+
+Optional PUT fields: `model` (string), `generatedAt` (ISO datetime, defaults
+to now).
 
 ## Errors
 
