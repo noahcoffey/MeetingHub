@@ -26,8 +26,9 @@ export type SeriesRow = {
 };
 
 // Right rail for the meeting detail: Agenda (queued topics for the matched
-// people) over From-last-time (open items from earlier occurrences) over
-// Action items over Notes (attached first-class notes) over Description.
+// people) over Related projects (capture adjacent work before it evaporates)
+// over From-last-time (open items from earlier occurrences) over Action items
+// over Notes (attached first-class notes) over Description.
 // All sections collapse to just their header.
 export function MeetingRail({
   description,
@@ -36,6 +37,8 @@ export function MeetingRail({
   agenda,
   agendaCount = 0,
   fromLastTime = [],
+  relatedProjects,
+  relatedCount = 0,
   children,
 }: {
   description: string;
@@ -46,10 +49,15 @@ export function MeetingRail({
   agendaCount?: number;
   // Open action items created in earlier same-title meetings.
   fromLastTime?: SeriesRow[];
+  // Rendered Related-projects body; null when the projects feature is off.
+  relatedProjects?: React.ReactNode;
+  relatedCount?: number;
   children: React.ReactNode;
 }) {
   const hasDescription = description.trim().length > 0;
   const [agendaOpen, setAgendaOpen] = useState(agendaCount > 0);
+  // Open by default even when empty — the input IS the point of this section.
+  const [relatedOpen, setRelatedOpen] = useState(true);
   const [lastTimeOpen, setLastTimeOpen] = useState(fromLastTime.length > 0);
   const [itemsOpen, setItemsOpen] = useState(true);
   // Collapse the notes section by default when nothing is attached yet.
@@ -71,6 +79,24 @@ export function MeetingRail({
             Agenda
           </button>
           {agendaOpen && <div className="rail-section-body">{agenda}</div>}
+        </section>
+      )}
+
+      {relatedProjects != null && (
+        <section className={`rail-section ${relatedOpen ? "open" : "collapsed"}`}>
+          <button
+            type="button"
+            className="rail-section-head"
+            onClick={() => setRelatedOpen((o) => !o)}
+            aria-expanded={relatedOpen}
+          >
+            <Chevron open={relatedOpen} />
+            Related projects
+            {relatedCount > 0 && <span className="rail-count">{relatedCount}</span>}
+          </button>
+          {relatedOpen && (
+            <div className="rail-section-body">{relatedProjects}</div>
+          )}
         </section>
       )}
 

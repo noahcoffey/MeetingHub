@@ -11,7 +11,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const STATUSES = ["active", "archived"] as const;
+const STATUSES = ["active", "archived", "parked"] as const;
 type Status = (typeof STATUSES)[number];
 
 export const GET = withV1({}, async (_req, ctx, principal) => {

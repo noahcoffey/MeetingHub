@@ -5,6 +5,7 @@ import {
   listForMeeting,
   MilestoneAssignmentError,
 } from "@/lib/action-items";
+import { listActionItemsForProject } from "@/lib/projects";
 import { isRecurrenceUnit } from "@/lib/recurrence";
 import { getActiveWorkspaceId } from "@/lib/workspace-context";
 
@@ -16,9 +17,19 @@ export const GET = auth(async (req) => {
   if (!req.auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const meetingId = new URL(req.url).searchParams.get("meetingId");
+  const params = new URL(req.url).searchParams;
+  const meetingId = params.get("meetingId");
+  const projectId = params.get("projectId");
+  if (projectId) {
+    // The map panel wants only what's still outstanding.
+    const all = await listActionItemsForProject(projectId);
+    return NextResponse.json({ items: all.filter((i) => i.status === "open") });
+  }
   if (!meetingId) {
-    return NextResponse.json({ error: "meetingId required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "meetingId or projectId required" },
+      { status: 400 },
+    );
   }
   const items = await listForMeeting(meetingId);
   return NextResponse.json({ items });

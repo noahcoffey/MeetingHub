@@ -36,9 +36,22 @@ export const actionItemSourceEnum = pgEnum("action_item_source", [
   "meeting",
   "manual",
 ]);
+// parked = an idea captured mid-meeting that isn't a real initiative yet. It's a
+// full project row so promoting it is a status flip, but it stays out of every
+// active-project surface (see lib/projects.ts listProjects) until then.
 export const projectStatusEnum = pgEnum("project_status", [
   "active",
   "archived",
+  "parked",
+]);
+// How two projects relate. "related" is the zero-decision default used by
+// mid-meeting capture; blocks/depends_on are the two *flow* kinds and are the
+// only ones the cycle check constrains.
+export const projectRelationKindEnum = pgEnum("project_relation_kind", [
+  "related",
+  "blocks",
+  "depends_on",
+  "spun_from",
 ]);
 export const recurrenceUnitEnum = pgEnum("recurrence_unit", [
   "day",
@@ -788,6 +801,41 @@ export const taskDependencies = pgTable(
   (t) => [unique().on(t.taskId, t.dependsOnId)],
 );
 
+// ---- project_relations ----
+// Directed edge between two projects ("this integration blocks the migration").
+// Both FKs cascade for the same reason as task_dependencies: a half-edge has no
+// meaning. No workspace_id — scope inherits from the endpoints, which
+// addRelation guarantees are in the same workspace.
+export const projectRelations = pgTable(
+  "project_relations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromId: uuid("from_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    toId: uuid("to_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: projectRelationKindEnum("kind").notNull().default("related"),
+    // Optional one-liner on what came up. Never the meeting's note body.
+    note: text("note"),
+    // Provenance: the meeting this connection was raised in. Set null, not
+    // cascade — the relationship outlives the meeting that produced it.
+    createdInMeetingId: uuid("created_in_meeting_id").references(
+      () => meetings.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique().on(t.fromId, t.toId),
+    index("project_relations_from_id_idx").on(t.fromId),
+    index("project_relations_to_id_idx").on(t.toId),
+  ],
+);
+
 // ---- weekly summaries ----
 // One AI-generated "Sunday Summary" per workspace per week. Generated OUTSIDE
 // the app by the local runner (tools/sunday-summary) and pushed via
@@ -822,6 +870,11 @@ export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ProjectLink = typeof projectLinks.$inferSelect;
 export type ProjectMilestone = typeof projectMilestones.$inferSelect;
+export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
+export type ProjectRelation = typeof projectRelations.$inferSelect;
+export type NewProjectRelation = typeof projectRelations.$inferInsert;
+export type ProjectRelationKind =
+  (typeof projectRelationKindEnum.enumValues)[number];
 export type Note = typeof notes.$inferSelect;
 export type Person = typeof people.$inferSelect;
 export type PersonMeetingTitle = typeof personMeetingTitles.$inferSelect;
