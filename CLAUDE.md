@@ -160,34 +160,94 @@ Defined in `src/db/schema.ts`. Core tables:
   via its `fromId`, since an edge id alone carries no scope. Surfaces: the meeting rail's
   **Related projects** section (type-ahead to link an existing project, or type a new name to
   create a parked project + edge in one request via `POST /api/project-relations/capture`) and the
-  project hub's **Map** tab (`projects/project-map.tsx` — a small static radial preview, links out
-  to the real thing). No v1/MCP exposure yet.
-- **`/map`** (`(app)/map/map-workspace.tsx`) is the app-like surface for the graph, and the reason
-  there's no graph library here: it's hand-rolled SVG + absolutely-positioned HTML nodes. Shape to
+  project hub's **Map** tab (`projects/project-map.tsx` — a small radial preview, links out to the
+  real thing). No v1/MCP exposure yet.
+- **Graph rendering** is **React Flow** (`@xyflow/react`, MIT), shared by both graph surfaces via
+  `(app)/project-graph.tsx` (the custom `project` node + `project` edge, the arrowhead `<defs>`, and
+  the legend) and `(app)/project-graph-state.ts` (bubble colour: overdue / due soon ≤7d / active /
+  parked — the same urgency buckets `/projects` uses, off the `deadline` the payload already
+  carries; the graph never contains archived projects). **React Flow renders and handles input; it
+  never decides where a node goes** — the app's own layouts below produce positions and pass them in
+  as controlled state, `nodesDraggable={false}` (nothing persists a manual position), and no
+  simulation runs. Nodes use `nodeOrigin={[0.5, 0.5]}` so a layout point *is* the bubble's centre.
+  The custom edge reads live node positions via `useInternalNode` and trims the line to the bubble's
+  ellipse, which is what lets edges track a tween frame by frame.
+- **`/map`** (`(app)/map/map-workspace.tsx`) is the app-like surface for the graph. Shape to
   preserve when touching it:
   - **Two modes off one `focusId` state.** `null` = **overview**, the default: every project in the
-    workspace, connected or not, as one board — connected components as compact constellations up
-    top (ring radius is capped, not stretched), single unconnected projects packed into rows
-    beneath, the whole composition vertically centred. Set = **focus**, a two-hop radial around one
-    project. In overview a click only *selects* (opens the panel) so the board never moves under
+    workspace, connected or not, as one board — connected components as constellations up top,
+    single unconnected projects packed into rows beneath, the whole composition vertically centred.
+    Set = **focus**, a two-hop radial around one project. In overview a click only *selects* (opens the panel) so the board never moves under
     you; centring is explicit (panel button, double-click, or the Jump box), and "‹ Everything"
     goes back. In focus mode a click re-centres.
   - **One server load, then no navigations.** The page ships the whole workspace graph; every mode
     change is state, so the URL never changes. `?focus=` only seeds the starting node.
-  - **The stage never scrolls.** A ResizeObserver feeds the live pixel box into the layout, the SVG
-    is sized 1:1 with it, and the radial layout always fits — that's why there's no pan/zoom, and
-    why nothing must introduce overflow. Full-screen is the browser Fullscreen API on the stage.
-  - **Positions are tweened** (rAF + easeInOutCubic, ~380ms) and edges are drawn from the same
-    interpolated points, so lines travel with their nodes. Nodes are placed with `transform` +
-    `translate: -50% -50%`, not `left/top`.
+  - **The page never scrolls; the canvas does.** A ResizeObserver feeds the live pixel box into the
+    layout so the graph *opens* already fitting the stage, and React Flow then pans/zooms the
+    viewport over it (Controls has the fit-view button). The stage clips its own overflow — nothing
+    may make the surrounding page scrollable, horizontally least of all, or the sticky top bar goes
+    with it. Full-screen is the browser Fullscreen API on the stage.
+  - **Positions are tweened** (rAF + easeInOutCubic, ~380ms). The interpolated points are fed into
+    React Flow's controlled `nodes` and the custom edge derives its path from live node positions,
+    so lines travel with their nodes. Don't swap the tween for a CSS transition on
+    `.react-flow__node` — edges would snap while nodes glide.
+  - **Geometry lives in `(app)/project-graph-layout.ts`** — pure, React-free, unit-tested in
+    `tests/lib/project-graph-layout.test.ts`. Each component is a **radial spanning tree**: BFS from
+    the best-connected project, each node owns an angular wedge, children carve their slice out of
+    the parent's wedge in proportion to subtree leaf count. That is what keeps a project's
+    satellites next to *it* rather than spread around a shared ring — the old single-ring-per-
+    component layout sent a node's own satellites to the far side and their edges crossed the
+    middle as chords. Non-tree edges still draw; they just don't decide position. Components are
+    shelf-packed by their real extent, not dropped into equal grid cells. Focus mode is the same
+    tree, rooted on `focusId` and cut to two hops. The tests encode the complaint directly (a
+    satellite must be nearer its own parent than any other), so keep them honest.
+  - **Bubbles are uniform circles** (`--pg-size` on `.pg-node`), name centred and wrapped over up to
+    three lines — the old pill clipped anything past ~18 characters to an ellipsis. Uniform size is
+    deliberate: bubbles that grow to fit their text imply a hierarchy of importance the data doesn't
+    have. The open-task count moved to a corner pill and the connector handle to the rim, so neither
+    fights the label for the centre. `RING_GAP`/`SQUASH` in the layout module are tuned to this size
+    (circles need nearly as much vertical room as horizontal, unlike the old wide-short pills) —
+    changing `--pg-size` means revisiting them.
+  - **The viewport frames the composition; the layout doesn't fight to fit it.** After a full
+    relayout `fitView` runs once the tween has settled — late enough that it reads final positions
+    *and* that the side panel has already narrowed the canvas, so nothing ends up parked behind the
+    panel. Selecting, connecting and disconnecting never move the viewport.
+  - **A full relayout is an event, not a reaction.** `targets` is state. It recomputes on mount,
+    overview↔focus, resize and the **Tidy** button — and on nothing else. Adding a project,
+    connecting or disconnecting leaves every existing bubble where it is; a new node is hung off its
+    neighbour by `placeNear` into the emptiest direction. Rearranging the whole board when one node
+    appears reads as a page reload, which is exactly what this avoids.
+  - **Nothing transient may be a layout input.** The ResizeObserver measures `.mapx-body`, never
+    `.mapx-canvas` (the side panel narrows the canvas), and the error + connect banners are
+    absolutely positioned *inside* the body rather than stacked above it — as normal-flow siblings
+    they shrank the stage and the board jumped every time one appeared.
+  - **React Flow renders a re-created node un-hittable for a frame**, which silently eats the second
+    click of a double-click. Hence: selection rides in node `data` as `isSelected`, **never** React
+    Flow's `selected` prop; `elevateNodesOnSelect` is off; and `onNodeActivate`/`onPaneActivate`
+    detect the double click themselves — two clicks on one id inside 400ms, *and* a pane click that
+    soon after a node click is treated as the swallowed second half of the gesture rather than
+    "clicked away". Without that last fallback, double-click-to-centre silently deselects instead.
+    All of it is covered in `e2e/project-relations.spec.ts`; it has regressed before.
+    (The side panel was briefly an absolute overlay to dodge the canvas resize — it covered the
+    right-hand bubbles and swallowed their clicks. Don't retry that.)
   - In focus mode, two hops max, and the outer ring fans around **its own parent's angle** so an
     edge reads as a branch instead of a chord through the centre. Anything further out is reached
     via the Jump box or by going back to the overview.
-  - **Connecting works two ways in both modes**: drag a node's handle onto another, or *click* the
-    handle (or the panel's "Draw connection") to arm click-to-connect and click the target — Esc or
-    Cancel backs out. The click path exists because a drag onto a small handle is easy to miss.
-    Pointer capture makes the trailing click fire on the handle even when released elsewhere, so a
-    completed drag sets a `didDrag` ref that suppresses the arm — don't remove that guard.
+  - **Connecting works two ways in both modes**, both now React Flow's own gesture: drag a node's
+    crosshair handle onto another, or *click* the crosshair to arm click-to-connect and click the
+    target. The click path exists because a drag onto a small handle is easy to miss. React Flow
+    keeps the armed source in an internal store field that **nothing clears but clicking a second
+    handle** — no Esc, no cancel on a pane click — so `useClickConnect()` in `project-graph.tsx`
+    owns the way out: it mirrors the armed node from `onClickConnectStart`/`End`, renders the
+    `ConnectBanner` (with Cancel), binds Esc, and clears `connectionClickStartHandle` on the store.
+    Don't drop that hook for "React Flow handles it" — it doesn't.
+    Two more things in `project-graph.tsx` make the gesture forgiving: the whole bubble is a covering
+    `target` handle with `isConnectableStart={false}`, which React Flow leaves at
+    `pointer-events: none` until a connection is actually in flight — so it catches the drop
+    anywhere on the node without swallowing ordinary clicks. And a finished click-connect still
+    bubbles a click to the node underneath, so both surfaces hold a `justConnected` **ref** (not
+    state — the click lands in the same event dispatch) to skip that select/navigate. Don't remove
+    either guard.
   - The **side panel** opens on selection: header, connections (retype/disconnect/refocus inline),
     connect-or-create type-ahead, and open tasks with quick-add (content only — no due date,
     priority, or recurrence) via `GET/POST /api/action-items?projectId=` and a `status: done` PATCH.

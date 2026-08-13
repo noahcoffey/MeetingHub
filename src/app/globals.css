@@ -6975,108 +6975,6 @@ html {
   overflow: hidden;
   touch-action: none;
 }
-.pmap-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.pmap-edge {
-  stroke: var(--border-strong);
-  stroke-width: 1.6;
-  cursor: pointer;
-  pointer-events: stroke;
-}
-.pmap-edge:hover,
-.pmap-edge.on {
-  stroke: var(--accent);
-  stroke-width: 2.4;
-}
-.pmap-edge.kind-blocks,
-.pmap-edge.kind-depends_on {
-  stroke: var(--warn);
-}
-.pmap-edge.kind-spun_from {
-  stroke-dasharray: 5 4;
-}
-.pmap-arrowhead {
-  fill: var(--warn);
-}
-.pmap-drag-line {
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linecap: round;
-  pointer-events: none;
-}
-
-/* Nodes are real HTML over the SVG so labels stay selectable text. */
-.pmap-node {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-  max-width: 11rem;
-  padding: 0.3rem 0.4rem 0.3rem 0.6rem;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-}
-.pmap-node.centre {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-}
-.pmap-node.parked {
-  border-style: dashed;
-  border-color: var(--warn);
-  opacity: 0.9;
-}
-.pmap-node.archived {
-  opacity: 0.55;
-}
-.pmap-node.drop-target {
-  outline: 2px dashed var(--accent);
-  outline-offset: 2px;
-}
-.pmap-node-label {
-  background: transparent;
-  border: none;
-  color: var(--text);
-  font-size: 0.82rem;
-  padding: 0;
-  max-width: 8.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.pmap-crosshair {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  background: transparent;
-  border: none;
-  border-radius: 999px;
-  color: var(--faint);
-  opacity: 0;
-  cursor: grab;
-  touch-action: none;
-  transition: opacity 0.12s ease, color 0.12s ease;
-}
-.pmap-crosshair svg {
-  width: 14px;
-  height: 14px;
-}
-.pmap-node:hover .pmap-crosshair {
-  opacity: 1;
-}
-.pmap-crosshair:hover {
-  color: var(--accent);
-}
 
 .pmap-edge-panel {
   display: flex;
@@ -7159,8 +7057,9 @@ html {
 }
 
 /* ---- /map: the graph as the interface, not a page with a diagram ---- */
-/* The stage owns the viewport height and never scrolls; panning/zooming is
-   deliberately absent because the layout always sizes itself to fit. */
+/* The stage owns the viewport height and the page around it never scrolls —
+   horizontal page overflow would drag the sticky top bar off screen. Panning
+   and zooming happen inside the canvas, which clips its own overflow. */
 .mapx {
   display: flex;
   flex-direction: column;
@@ -7198,6 +7097,19 @@ html {
   padding: 0.4rem 1rem;
   font-size: 0.82rem;
 }
+/* Both live over the canvas rather than in the column: see the note in
+   map-workspace.tsx — chrome that changes the stage height re-lays-out the
+   board underneath it. */
+.mapx-body > .mapx-error,
+.mapx-body > .pg-linking {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--bg-2) 92%, transparent);
+  backdrop-filter: blur(2px);
+}
 
 .mapx-jump {
   position: relative;
@@ -7226,6 +7138,7 @@ html {
 }
 
 .mapx-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -7237,10 +7150,7 @@ html {
   overflow: hidden;
   touch-action: none;
 }
-.mapx-svg {
-  position: absolute;
-  inset: 0;
-}
+
 .mapx-empty {
   position: absolute;
   inset: 0;
@@ -7248,163 +7158,6 @@ html {
   place-items: center;
 }
 
-.mapx-edge {
-  stroke: var(--border-strong);
-  stroke-width: 1.6;
-  cursor: pointer;
-  pointer-events: stroke;
-}
-.mapx-edge:hover,
-.mapx-edge.on {
-  stroke: var(--accent);
-  stroke-width: 2.4;
-}
-.mapx-edge.kind-blocks,
-.mapx-edge.kind-depends_on {
-  stroke: var(--warn);
-}
-.mapx-edge.kind-spun_from {
-  stroke-dasharray: 5 4;
-}
-.mapx-arrowhead {
-  fill: var(--warn);
-}
-.mapx-drag-line {
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-linecap: round;
-  pointer-events: none;
-}
-
-/* Nodes are HTML over the SVG so labels stay real, selectable text. Position
-   comes from a transform, not left/top — it's composited, and the tween runs
-   every frame. */
-.mapx-node {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-  max-width: 12rem;
-  padding: 0.3rem 0.3rem 0.3rem 0.7rem;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-  will-change: transform;
-  /* The individual `translate` property composes ahead of `transform`, so the
-     bubble centres on its own point while the inline transform carries the
-     tweened position. */
-  translate: -50% -50%;
-}
-.mapx-node.hop-2 {
-  opacity: 0.62;
-  font-size: 0.92em;
-}
-.mapx-node.focus {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
-}
-.mapx-node.selected {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
-}
-.mapx-node.parked {
-  border-style: dashed;
-  border-color: var(--warn);
-}
-.mapx-node.drop-target {
-  outline: 2px dashed var(--accent);
-  outline-offset: 3px;
-}
-.mapx-node-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: transparent;
-  border: none;
-  color: var(--text);
-  font-size: 0.84rem;
-  padding: 0;
-  max-width: 9.5rem;
-  cursor: pointer;
-}
-.mapx-node-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mapx-node-count {
-  flex-shrink: 0;
-  font-size: 0.7rem;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-radius: 999px;
-  padding: 0.02rem 0.35rem;
-}
-.mapx-crosshair {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Deliberately generous: this is the connector handle, and a 20px target you
-     have to hit precisely is the difference between the feature working and
-     the feature not existing. */
-  width: 1.9rem;
-  height: 1.9rem;
-  margin: -0.25rem 0;
-  background: transparent;
-  border: none;
-  border-radius: 999px;
-  color: var(--faint);
-  opacity: 0;
-  cursor: crosshair;
-  touch-action: none;
-  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
-}
-.mapx-crosshair svg {
-  width: 16px;
-  height: 16px;
-}
-.mapx-node:hover .mapx-crosshair,
-.mapx-node.selected .mapx-crosshair,
-.mapx-node.link-source .mapx-crosshair {
-  opacity: 1;
-}
-.mapx-crosshair:hover {
-  color: var(--accent-fg);
-  background: var(--accent);
-}
-/* Touch has no hover, so the handle is always there. */
-@media (hover: none) {
-  .mapx-crosshair {
-    opacity: 1;
-  }
-}
-
-/* Armed connection: the source is held, everything else is a target. */
-.mapx-node.link-source {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
-}
-.mapx-node.link-target {
-  cursor: pointer;
-}
-.mapx-node.link-target:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-}
-.mapx-linking {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0;
-  padding: 0.45rem 1rem;
-  font-size: 0.83rem;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-bottom: 1px solid var(--border);
-}
 
 .mapx-edge-editor {
   position: absolute;
@@ -7427,6 +7180,12 @@ html {
   box-shadow: var(--shadow);
 }
 
+/* A flex sibling, deliberately NOT an overlay. Floating it over the canvas
+   stopped the canvas resizing (which makes React Flow re-measure every node),
+   but it then covered the right-hand bubbles and swallowed clicks meant for
+   them — a worse bug than the one it fixed. The board no longer jumps when this
+   opens because the layout measures `.mapx-body`, which the panel doesn't
+   change; see the ResizeObserver in map-workspace.tsx. */
 .mapx-panel {
   flex: 0 0 20rem;
   min-width: 0;
@@ -7567,15 +7326,413 @@ html {
     display: none;
   }
 }
-/* Overview packs the whole ecosystem into one board, so bubbles give up some
-   width to keep the cells from colliding. */
-.mapx.is-overview .mapx-node {
-  max-width: 9.5rem;
-}
-.mapx.is-overview .mapx-node-label {
-  max-width: 7.5rem;
-  font-size: 0.8rem;
-}
 .mapx-back {
   flex-shrink: 0;
+}
+
+/* ---- Shared project-graph rendering (React Flow) ----
+   Both graph surfaces — /map and the project hub's Map tab — draw through the
+   same node and edge components, so these rules are the single place a project
+   bubble or a relation line is styled. React Flow supplies hit-testing, the
+   viewport and the connection gesture; everything visual is ours. */
+
+/* React Flow's own tokens, mapped onto the app's theme so the canvas doesn't
+   arrive with a light-mode default under a dark UI. */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke-default: var(--border-strong);
+  --xy-edge-stroke-selected-default: var(--accent);
+  --xy-handle-background-color: transparent;
+  --xy-handle-border-color: transparent;
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-2);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-color-hover: var(--accent);
+  --xy-controls-button-border-color: var(--border);
+  --xy-attribution-background-color: transparent;
+  --xy-background-pattern-color: var(--border);
+}
+.react-flow__attribution a {
+  color: var(--faint);
+  font-size: 0.68rem;
+}
+.react-flow__controls {
+  box-shadow: var(--shadow-sm);
+}
+.react-flow__node {
+  /* Bubbles size to their label; React Flow measures whatever comes out. */
+  width: auto;
+}
+/* The default focus ring lands on the wrapper, which is bigger than the pill. */
+.react-flow__node:focus-visible,
+.react-flow__edge:focus-visible {
+  outline: none;
+}
+.react-flow__node:focus-visible .pg-node {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Arrowheads live in a detached <svg>; ids resolve document-wide. */
+.pg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ---- Nodes ---- */
+/* Circles, uniformly sized, with the name centred and wrapped over up to three
+   lines. The old pill was one clipped line, so anything past ~18 characters was
+   an ellipsis; three wrapped lines show roughly twice that. Uniform size is
+   deliberate — bubbles that resize themselves to their text make a graph read
+   as a hierarchy of importance it doesn't have. `--pg-size` is the single knob:
+   the layout module's ring spacing is tuned to it. */
+/* Every dimension is a custom property with the shipped value as its default,
+   so the dev-only style palette (`map-style-lab.tsx`) can retune the bubbles
+   live by setting these inline on the stage. Inline on `.mapx` beats the
+   `.mapx.is-overview` block below, which is what makes the palette authoritative
+   in both modes. Defaults live here, not in the palette. */
+.pg-node {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--pg-size, 7.9rem);
+  height: var(--pg-size, 7.9rem);
+  padding: 0 var(--pg-pad-x, 0.1rem);
+  text-align: center;
+  font-size: var(--pg-font-size, 1.5rem);
+  font-weight: var(--pg-font-weight, 900);
+  line-height: var(--pg-line-height, 1.25);
+  letter-spacing: var(--pg-letter-spacing, 0);
+  color: var(--text);
+  background: var(--surface);
+  border: var(--pg-border-width, 3px) solid var(--border-strong);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.pg-node-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--pg-clamp, 3);
+  line-clamp: var(--pg-clamp, 3);
+  overflow: hidden;
+  /* Long unbroken project names would otherwise push out of the circle. */
+  overflow-wrap: anywhere;
+}
+/* Corner pill, so the count never competes with the name for the centre. */
+.pg-node-count {
+  position: absolute;
+  top: 4%;
+  right: 4%;
+  min-width: 1.15rem;
+  font-size: 0.68rem;
+  line-height: 1.15rem;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.3rem;
+}
+
+/* State colours. The fill is a wash rather than a solid so the label keeps its
+   contrast in both themes; the border carries the saturated colour. */
+.pg-node.state-active,
+.pg-legend-dot.state-active {
+  --pg-state: var(--accent);
+}
+.pg-node.state-soon,
+.pg-legend-dot.state-soon {
+  --pg-state: var(--warn);
+}
+.pg-node.state-overdue,
+.pg-legend-dot.state-overdue {
+  --pg-state: var(--danger);
+}
+.pg-node.state-parked,
+.pg-legend-dot.state-parked {
+  --pg-state: var(--muted);
+}
+.pg-node {
+  border-color: color-mix(in srgb, var(--pg-state) 60%, var(--border-strong));
+  background: color-mix(in srgb, var(--pg-state) 15%, var(--surface));
+}
+/* A parked idea isn't a real initiative yet, and the dashed edge says so
+   without spending a colour on it. */
+.pg-node.state-parked {
+  border-style: dashed;
+}
+.pg-node.centre {
+  border-width: calc(var(--pg-border-width, 3px) + 1px);
+  font-weight: var(--pg-font-weight-centre, 700);
+}
+.pg-node.faded {
+  opacity: 0.62;
+}
+.pg-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+/* The whole bubble is the drop zone / click-to-connect target. React Flow
+   leaves this at pointer-events:none until a connection is actually in flight,
+   so it never swallows an ordinary click. */
+.react-flow__handle.pg-node-hit {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  transform: none;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+}
+/* Valid drop target during a connection. */
+.react-flow__handle.pg-node-hit.connectingto {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* The visible connector: drag it, or click it and then click the other
+   project. Deliberately generous — a target you have to hit precisely is the
+   difference between the feature working and the feature not existing. */
+.react-flow__handle.pg-node-crosshair {
+  /* On the rim at the lower right, where it doesn't sit on the label. */
+  position: absolute;
+  top: auto;
+  left: auto;
+  right: -0.1rem;
+  bottom: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  min-width: 0;
+  min-height: 0;
+  transform: none;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--faint);
+  opacity: 0;
+  cursor: crosshair;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.react-flow__handle.pg-node-crosshair svg {
+  width: 15px;
+  height: 15px;
+}
+.pg-node:hover .react-flow__handle.pg-node-crosshair,
+.pg-node.selected .react-flow__handle.pg-node-crosshair,
+.react-flow__handle.pg-node-crosshair.connectingfrom,
+.react-flow__handle.pg-node-crosshair.clickconnecting {
+  opacity: 1;
+}
+/* `connectingfrom` is the drag source, `clickconnecting` the armed
+   click-to-connect source — both are "the line starts here". */
+.react-flow__handle.pg-node-crosshair:hover,
+.react-flow__handle.pg-node-crosshair.connectingfrom,
+.react-flow__handle.pg-node-crosshair.clickconnecting {
+  color: var(--accent-fg);
+  background: var(--accent);
+}
+/* Touch has no hover, so the handle is always there. */
+@media (hover: none) {
+  .react-flow__handle.pg-node-crosshair {
+    opacity: 1;
+  }
+}
+
+/* ---- Edges ---- */
+.react-flow__edge path.pg-edge {
+  stroke: var(--border-strong);
+  stroke-width: 1.6;
+}
+/* Only the two directional kinds are drawn as flow. */
+.react-flow__edge path.pg-edge.kind-blocks,
+.react-flow__edge path.pg-edge.kind-depends_on {
+  stroke: var(--warn);
+}
+.react-flow__edge path.pg-edge.kind-spun_from {
+  stroke-dasharray: 5 4;
+}
+.react-flow__edge:hover path.pg-edge,
+.react-flow__edge path.pg-edge.on {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+}
+.pg-arrowhead {
+  fill: var(--warn);
+}
+/* The rubber band while a connection is being drawn. */
+.react-flow__connectionline .react-flow__connection-path {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Armed connection: the source is held, everything else is a target. */
+.pg-linking {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.45rem 1rem;
+  font-size: 0.83rem;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+/* Inside the hub card it's a block in the flow, not a full-bleed bar. */
+.pmap .pg-linking {
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Legend ---- */
+.pg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.85rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.pg-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.pg-legend-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pg-state) 70%, var(--border-strong));
+  background: color-mix(in srgb, var(--pg-state) 45%, var(--surface));
+}
+.pg-legend-dot.state-parked {
+  border-style: dashed;
+}
+
+/* The legend sits in /map's top bar, so it has to yield before the meta text
+   does on a narrow window. */
+.mapx-legend {
+  margin-left: 0.5rem;
+}
+@media (max-width: 1100px) {
+  .mapx-legend {
+    display: none;
+  }
+}
+.pmap-footnote {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+/* ---- Bubble style palette (map-style-lab.tsx) ----
+   Doubles as a tuning tool (its readout emits the CSS below) and a per-browser
+   preference, persisted to localStorage. */
+.stylelab-fab {
+  position: absolute;
+  z-index: 20;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.stylelab-fab:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.stylelab {
+  position: absolute;
+  z-index: 20;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  width: 22rem;
+  max-height: min(80vh, 44rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.8rem;
+}
+.stylelab-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.stylelab-note {
+  margin-right: auto;
+  font-size: 0.72rem;
+}
+.stylelab-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.stylelab-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr 3.6rem 1.8rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+.stylelab-label {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.stylelab-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.stylelab-num {
+  width: 100%;
+  font-size: 0.74rem;
+  padding: 0.15rem 0.3rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.stylelab-unit {
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+.stylelab-out {
+  width: 100%;
+  height: 12rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  padding: 0.5rem;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.stylelab-copy {
+  align-self: flex-start;
 }
