@@ -1,12 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Hanken_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 // Distinctive-but-clean grotesque for the whole app (UI + notes).
-const uiFont = Hanken_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+//
+// Self-hosted rather than pulled from `next/font/google`, which fetches at
+// BUILD time: a blip reaching fonts.googleapis.com failed the build outright,
+// on CI and equally on a Dokploy deploy. The file is the same one Google serves
+// for the `latin` subset, and it's the variable version, so one 34KB file
+// covers every weight the app uses instead of four static cuts. Licence in
+// ./fonts/OFL.txt — keep it next to the font.
+const uiFont = localFont({
+  src: "./fonts/hanken-grotesk-latin-variable.woff2",
+  weight: "100 900",
+  style: "normal",
   variable: "--font-ui",
   display: "swap",
 });
