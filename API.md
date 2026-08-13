@@ -63,10 +63,10 @@ on.
 | POST | `/api/v1/meetings?workspace=` | `{ title, startTime (ISO), endTime? }` |
 | GET | `/api/v1/meetings/:id` | Full row incl. `notes` and `notesGenerated` |
 | PATCH | `/api/v1/meetings/:id` | `{ title?, startTime?, endTime?, projectId?, notes? }` |
-| GET | `/api/v1/projects?workspace=&includeArchived=true` | |
+| GET | `/api/v1/projects?workspace=&includeArchived=true&includeParked=true` | Active only by default; each flag adds that status |
 | POST | `/api/v1/projects?workspace=` | `{ name, description?, deadline? }` |
 | GET | `/api/v1/projects/:id` | |
-| PATCH | `/api/v1/projects/:id` | `{ name?, description?, deadline?, status? }` (`active`/`archived`) |
+| PATCH | `/api/v1/projects/:id` | `{ name?, description?, deadline?, status? }` (`active`/`archived`/`parked`) |
 | GET | `/api/v1/projects/:id/milestones` | Includes task progress counts |
 | POST | `/api/v1/projects/:id/milestones` | `{ name, dueDate? }` |
 | GET | `/api/v1/milestones/:id` | |
@@ -83,6 +83,9 @@ on.
 Responses: lists are `{ items: [...] }`, single rows `{ item: {...} }`,
 creates return 201. Dates are ISO 8601; day-scoped fields (`dueDate`,
 `deadline`) are `YYYY-MM-DD`.
+
+Project↔project relations (`project_relations`) have **no v1 or MCP surface yet** — they're
+reachable only through the session-gated `/api/project-relations` routes the app's own UI uses.
 
 ### Example: tasks
 
