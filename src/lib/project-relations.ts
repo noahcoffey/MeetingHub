@@ -316,6 +316,7 @@ export type MapNode = {
   id: string;
   name: string;
   status: ProjectStatus;
+  deadline: string | null; // colours the bubble on the graph surfaces
   hop: number; // 0 = the centre project
 };
 
@@ -417,7 +418,12 @@ export async function getProjectMap(
   }
 
   const nodeRows = await db
-    .select({ id: projects.id, name: projects.name, status: projects.status })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      status: projects.status,
+      deadline: projects.deadline,
+    })
     .from(projects)
     .where(inArray(projects.id, [...hops.keys()]));
 
@@ -436,7 +442,6 @@ export async function getProjectMap(
 // The map page's node carries enough for the side panel's header to render
 // with no extra round trip; the panel fetches tasks lazily on selection.
 export type WorkspaceMapNode = MapNode & {
-  deadline: string | null;
   openTasks: number;
 };
 

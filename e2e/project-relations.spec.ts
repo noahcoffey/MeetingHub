@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import postgres from "postgres";
 import { E2E_DATABASE_URL, E2E_PASSWORD } from "./constants";
 
@@ -42,6 +42,39 @@ test.beforeAll(async () => {
     await sql.end();
   }
 });
+
+// The map animates: a relayout tweens (~380ms) and is then followed by a
+// fitView that animates again. Polling for a bounding box that stops moving
+// keeps the position assertions off an in-flight frame and independent of those
+// durations.
+//
+// It insists on SUSTAINED stillness rather than two matching reads, because
+// there is a gap between the click and the first animated frame — two quick
+// samples land inside it and report "settled" before anything has moved.
+const STABLE_SAMPLES = 4;
+const SAMPLE_MS = 150;
+
+async function settled(locator: Locator) {
+  let previous = await locator.boundingBox();
+  let run = 0;
+  await expect
+    .poll(
+      async () => {
+        const current = await locator.boundingBox();
+        const same =
+          !!previous &&
+          !!current &&
+          Math.abs(previous.x - current.x) < 0.5 &&
+          Math.abs(previous.y - current.y) < 0.5;
+        run = same ? run + 1 : 0;
+        previous = current;
+        return run;
+      },
+      { timeout: 15_000, intervals: [SAMPLE_MS] },
+    )
+    .toBeGreaterThanOrEqual(STABLE_SAMPLES);
+  return previous!;
+}
 
 // Hub tab labels ("Map", "Meetings") are also main-nav labels, so tab clicks
 // must be scoped to the tab bar or they land on the sidebar link instead.
@@ -99,11 +132,12 @@ test("capture a tangent from a meeting, then find it on the map", async ({
     await page.goto("/projects");
     await page.locator(".project-row-name", { hasText: HUB }).first().click();
     await hubTab(page, "Map").click();
-    const node = page.locator(".pmap-node", { hasText: idea });
+    const node = page.locator(".pg-node", { hasText: idea });
     await expect(node).toBeVisible();
-    await expect(node).toHaveClass(/parked/);
+    // Bubble fill is state-derived: a captured idea is parked.
+    await expect(node).toHaveClass(/state-parked/);
     // The blocks edge from the fixture draws an arrowhead.
-    await expect(page.locator(".pmap-edge.kind-blocks")).toHaveCount(1);
+    await expect(page.locator(".pg-edge.kind-blocks")).toHaveCount(1);
   });
 
   await test.step("and on the standalone workspace map from the nav", async () => {
@@ -114,18 +148,40 @@ test("capture a tangent from a meeting, then find it on the map", async ({
     // Default is the whole ecosystem, unconnected projects included.
     await expect(page.locator(".mapx.is-overview")).toBeVisible();
     for (const name of [HUB, NEIGHBOUR, BLOCKER, idea]) {
-      await expect(page.locator(".mapx-node", { hasText: name })).toBeVisible();
+      await expect(page.locator(".pg-node", { hasText: name })).toBeVisible();
     }
     // Selecting in the overview opens the panel WITHOUT re-centring, so the
     // board stays put while you inspect or connect something.
     const url = page.url();
-    await page.locator(".mapx-node", { hasText: HUB }).locator(".mapx-node-label").click();
+    await page.locator(".pg-node", { hasText: HUB }).click();
     await expect(page.locator(".mapx-panel-title")).toHaveText(HUB);
     await expect(page.locator(".mapx.is-overview")).toBeVisible();
+    // Double-click centres from cold, nothing selected first. Fragile in a way
+    // that isn't obvious: the first click re-renders the board, React Flow
+    // renders the re-created node un-hittable for a frame, and the second click
+    // lands on empty pane. `onPaneActivate` treats a pane click that soon after
+    // a node click as the second half of the gesture — without it this silently
+    // deselects instead of centring. It has regressed here before.
+    await page.locator(".pg-node", { hasText: NEIGHBOUR }).dblclick();
+    await expect(page.locator(".pg-node.centre")).toContainText(NEIGHBOUR);
+    await page.getByRole("button", { name: "‹ Everything" }).click();
+    await expect(page.locator(".mapx.is-overview")).toBeVisible();
+
+    // Selecting must not shift the board. The panel narrows the canvas, so the
+    // layout deliberately measures the body instead — nothing moves under the
+    // pointer when you inspect something.
+    const probe = page.locator(".pg-node", { hasText: BLOCKER });
+    const before = await settled(probe);
+    await page.locator(".pg-node", { hasText: HUB }).click();
+    await expect(page.locator(".mapx-panel-title")).toHaveText(HUB);
+    const after = await settled(probe);
+    expect(Math.abs(before.x - after.x)).toBeLessThan(2);
+    expect(Math.abs(before.y - after.y)).toBeLessThan(2);
+
     // Centring is the explicit action, and still no navigation.
     await page.getByRole("button", { name: "Centre on this" }).click();
     await expect(page.locator(".mapx.is-overview")).toHaveCount(0);
-    await expect(page.locator(".mapx-node.focus")).toContainText(HUB);
+    await expect(page.locator(".pg-node.centre")).toContainText(HUB);
     expect(page.url()).toBe(url);
     await page.getByRole("button", { name: "‹ Everything" }).click();
     await expect(page.locator(".mapx.is-overview")).toBeVisible();
@@ -134,26 +190,20 @@ test("capture a tangent from a meeting, then find it on the map", async ({
   await test.step("connections can be drawn without a drag", async () => {
     // Click the handle, then click the target — the connector must not depend
     // on landing a drag on a small hit area.
-    const source = page.locator(".mapx-node", { hasText: BLOCKER });
+    const source = page.locator(".pg-node", { hasText: BLOCKER });
     await source.hover();
-    await source.locator(".mapx-crosshair").click();
-    await expect(page.locator(".mapx-linking")).toBeVisible();
+    await source.locator(".pg-node-crosshair").click();
+    await expect(page.locator(".pg-linking")).toBeVisible();
     const created = page.waitForResponse(
       (r) =>
         r.url().endsWith("/api/project-relations") &&
         r.request().method() === "POST",
     );
-    await page
-      .locator(".mapx-node", { hasText: NEIGHBOUR })
-      .locator(".mapx-node-label")
-      .click();
+    await page.locator(".pg-node", { hasText: NEIGHBOUR }).click();
     expect((await created).status()).toBe(201);
     // The new edge lands on the board immediately, with no reload.
-    await expect(page.locator(".mapx-linking")).toHaveCount(0);
-    await page
-      .locator(".mapx-node", { hasText: NEIGHBOUR })
-      .locator(".mapx-node-label")
-      .click();
+    await expect(page.locator(".pg-linking")).toHaveCount(0);
+    await page.locator(".pg-node", { hasText: NEIGHBOUR }).click();
     await expect(
       page.locator(".mapx-rel-row", { hasText: BLOCKER }),
     ).toBeVisible();

@@ -2,7 +2,38 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  type Connection,
+  type Edge,
+  type Node as FlowNode,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import type { ProjectRelationKind, ProjectStatus } from "@/db/schema";
+import {
+  ConnectBanner,
+  GraphDefs,
+  GraphLegend,
+  edgeTypes,
+  nodeTypes,
+  useClickConnect,
+  type ProjectEdgeData,
+  type ProjectNodeData,
+} from "../project-graph";
+import {
+  centreVertically,
+  layoutOverview,
+  placeNear,
+  radialTree,
+  type Point,
+} from "../project-graph-layout";
+import { projectGraphState, todayLocal } from "../project-graph-state";
+import { MapStyleLab, useBubbleStyle } from "./map-style-lab";
 import {
   KIND_OPTION_LABEL,
   RELATION_KINDS,
@@ -27,27 +58,14 @@ export type MapEdge = {
   createdInMeetingTitle: string | null;
 };
 
-type Point = { x: number; y: number };
 type Task = { id: string; content: string };
 
 // How far out from the focused project the map draws. Two hops is the limit of
-// what stays readable without pan/zoom, and the whole point here is that the
-// stage never scrolls.
+// what stays *readable* — the canvas pans and zooms now, but a third ring turns
+// a branch diagram into a hairball. Anything further out is reached by
+// re-centring or through the Jump box.
 const MAX_HOP = 2;
-const NODE_RX = 78;
-const NODE_RY = 19;
 const TWEEN_MS = 380;
-
-const CrosshairIcon = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden>
-    <circle cx="10" cy="10" r="6" strokeWidth="1.5" />
-    <path
-      d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-  </svg>
-);
 
 const ExpandIcon = () => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden>
@@ -87,296 +105,21 @@ function reachFrom(focusId: string, edges: MapEdge[]): Map<string, Reach> {
   return reach;
 }
 
-// Deterministic polar placement sized to the live stage, so the graph always
-// fits the box it's given — there is nothing to scroll or pan.
-function layout(
-  reach: Map<string, Reach>,
-  order: string[],
-  size: { w: number; h: number },
-): Map<string, Point> {
-  const out = new Map<string, Point>();
-  const angles = new Map<string, number>();
-  const cx = size.w / 2;
-  const cy = size.h / 2;
-  const byHop = new Map<number, string[]>();
-  for (const id of order) {
-    const r = reach.get(id);
-    if (!r) continue;
-    byHop.set(r.hop, [...(byHop.get(r.hop) ?? []), id]);
-  }
-  const maxHop = Math.max(...[...byHop.keys()], 1);
-  const outerRx = Math.max(130, cx - 120);
-  const outerRy = Math.max(80, cy - 70);
-  // With two rings the inner one sits a bit past halfway, which keeps ring-one
-  // labels clear of the centre without crowding the outer ring.
-  const ringScale = (hop: number) => (maxHop === 1 ? 1 : hop === 1 ? 0.56 : 1);
-
-  for (const id of byHop.get(0) ?? []) {
-    out.set(id, { x: cx, y: cy });
-    angles.set(id, 0);
-  }
-
-  const ring1 = byHop.get(1) ?? [];
-  ring1.forEach((id, i) => {
-    const angle = (i / ring1.length) * Math.PI * 2 - Math.PI / 2;
-    angles.set(id, angle);
-    out.set(id, {
-      x: cx + Math.cos(angle) * outerRx * ringScale(1),
-      y: cy + Math.sin(angle) * outerRy * ringScale(1),
-    });
-  });
-
-  // Outer ring: fan each node out around its own parent's heading, so an edge
-  // reads as a branch rather than a chord slicing across the centre.
-  const outer = byHop.get(2) ?? [];
-  const byParent = new Map<string, string[]>();
-  for (const id of outer) {
-    const p = reach.get(id)?.parent ?? "";
-    byParent.set(p, [...(byParent.get(p) ?? []), id]);
-  }
-  for (const [parent, ids] of byParent) {
-    const base = angles.get(parent) ?? 0;
-    // Wide enough to separate siblings, tight enough to stay a branch.
-    const spread = Math.min(1.15, 0.34 * ids.length);
-    ids.forEach((id, i) => {
-      const offset =
-        ids.length === 1 ? 0 : -spread / 2 + (spread * i) / (ids.length - 1);
-      const angle = base + offset;
-      angles.set(id, angle);
-      out.set(id, {
-        x: cx + Math.cos(angle) * outerRx,
-        y: cy + Math.sin(angle) * outerRy,
-      });
-    });
-  }
-  return out;
-}
-
-// The default view: everything in flight, connected or not. Each connected
-// component gets a cell of a grid and orbits its best-connected project; a
-// project with no relations yet is simply a component of one, so it sits in the
-// same grid as a plain bubble rather than being exiled to a corner. That
-// uniformity is what makes it feel like one board.
-function layoutOverview(
-  nodes: MapNode[],
-  edges: MapEdge[],
-  size: { w: number; h: number },
-): Map<string, Point> {
-  const out = new Map<string, Point>();
-  const neighbours = new Map<string, Set<string>>();
-  for (const n of nodes) neighbours.set(n.id, new Set());
-  for (const e of edges) {
-    neighbours.get(e.fromId)?.add(e.toId);
-    neighbours.get(e.toId)?.add(e.fromId);
-  }
-
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const seen = new Set<string>();
-  const groups: MapNode[][] = [];
-  for (const n of nodes) {
-    if (seen.has(n.id)) continue;
-    const group: MapNode[] = [];
-    const queue = [n.id];
-    while (queue.length > 0) {
-      const id = queue.shift() as string;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const node = byId.get(id);
-      if (node) group.push(node);
-      for (const nb of neighbours.get(id) ?? []) {
-        if (!seen.has(nb)) queue.push(nb);
-      }
-    }
-    groups.push(group);
-  }
-  // Clusters first, loose projects after — the eye starts where the structure is.
-  groups.sort((a, b) => b.length - a.length);
-  const clusters = groups.filter((g) => g.length > 1);
-  const singles = groups.filter((g) => g.length === 1).map((g) => g[0]);
-
-  // Two bands rather than one uniform grid: giving a lone bubble the same cell
-  // as a five-project cluster wastes most of the board. Structure sits up top,
-  // the not-yet-connected backlog packs tightly underneath.
-  const hasBoth = clusters.length > 0 && singles.length > 0;
-  // Clusters are capped rather than stretched: a four-project constellation
-  // blown up to fill half the screen reads as four unrelated bubbles.
-  const RING_RY = 118;
-  const clusterRows =
-    clusters.length === 0
-      ? 0
-      : Math.max(
-          1,
-          Math.ceil(
-            clusters.length /
-              Math.max(
-                1,
-                Math.round(
-                  Math.sqrt((clusters.length * size.w) / Math.max(size.h, 1)),
-                ),
-              ),
-          ),
-        );
-  const clusterH =
-    clusters.length === 0
-      ? 0
-      : hasBoth
-        ? Math.min(size.h * 0.72, clusterRows * (RING_RY * 2 + 80))
-        : size.h;
-  const singlesTop = clusterH;
-  const singlesH = size.h - clusterH;
-
-  if (clusters.length > 0) {
-    const cols = Math.max(1, Math.ceil(clusters.length / clusterRows));
-    const rows = clusterRows;
-    const cellW = size.w / cols;
-    const cellH = clusterH / rows;
-    clusters.forEach((group, gi) => {
-      const row = Math.floor(gi / cols);
-      // Centre a short final row instead of left-aligning it.
-      const inRow = Math.min(cols, clusters.length - row * cols);
-      const rowW = size.w / inRow;
-      const cx = (gi % cols) * rowW + rowW / 2;
-      const cy = row * cellH + cellH / 2;
-      const hub = [...group].sort(
-        (a, b) =>
-          (neighbours.get(b.id)?.size ?? 0) -
-            (neighbours.get(a.id)?.size ?? 0) ||
-          a.name.localeCompare(b.name),
-      )[0];
-      out.set(hub.id, { x: cx, y: cy });
-      const ring = group.filter((n) => n.id !== hub.id);
-      const rx = Math.max(72, Math.min(Math.min(rowW, cellW) / 2 - 55, 215));
-      const ry = Math.max(34, Math.min(cellH / 2 - 30, RING_RY));
-      ring.forEach((n, i) => {
-        const angle = (i / ring.length) * Math.PI * 2 - Math.PI / 2;
-        out.set(n.id, {
-          x: cx + Math.cos(angle) * rx,
-          y: cy + Math.sin(angle) * ry,
-        });
-      });
-    });
-  }
-
-  if (singles.length > 0) {
-    // Pack to a comfortable bubble pitch, then spread whatever fits per row.
-    const perRow = Math.max(
-      1,
-      Math.min(singles.length, Math.floor(size.w / 175)),
-    );
-    const rows = Math.ceil(singles.length / perRow);
-    const rowH = Math.min(96, singlesH / rows);
-    singles.forEach((n, i) => {
-      const row = Math.floor(i / perRow);
-      const inRow = Math.min(perRow, singles.length - row * perRow);
-      const gap = size.w / (inRow + 1);
-      out.set(n.id, {
-        x: gap * ((i % perRow) + 1),
-        y: singlesTop + 40 + row * rowH + rowH / 2,
-      });
-    });
-  }
-
-  // Both bands are laid out against their own budget, which can leave the whole
-  // composition sitting high. Centre what was actually drawn.
-  const ys = [...out.values()].map((p) => p.y);
-  if (ys.length > 0) {
-    const shift = size.h / 2 - (Math.min(...ys) + Math.max(...ys)) / 2;
-    for (const [id, p] of out) out.set(id, { x: p.x, y: p.y + shift });
-  }
-
-  return out;
-}
-
-// Stop a line at the bubble's edge. Bubbles are wide and short, so trim to an
-// ellipse rather than a circle or vertical edges float in space.
-function trim(from: Point, to: Point): Point {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-  const by = Math.min(len / 2, 1 / Math.hypot(ux / NODE_RX, uy / NODE_RY));
-  return { x: to.x - ux * by, y: to.y - uy * by };
-}
-
-// Module scope keeps the component identity stable across the state churn of a
-// drag — an inline definition would remount the node mid-gesture and kill the
-// pointer capture that makes drag-to-connect work.
-function Node({
-  node,
-  point,
-  hop,
-  isFocus,
-  isSelected,
-  isDropTarget,
-  isLinkSource,
-  isLinkTarget,
-  onSelect,
-  onCentre,
-  onStartLink,
-  onDragStart,
-  onDragMove,
-  onDragEnd,
-}: {
-  node: MapNode;
-  point: Point;
-  hop: number;
-  isFocus: boolean;
-  isSelected: boolean;
-  isDropTarget: boolean;
-  isLinkSource: boolean;
-  isLinkTarget: boolean;
-  onSelect: (id: string) => void;
-  onCentre: (id: string) => void;
-  onStartLink: (id: string) => void;
-  onDragStart: (e: React.PointerEvent, id: string) => void;
-  onDragMove: (e: React.PointerEvent) => void;
-  onDragEnd: (e: React.PointerEvent) => void;
+export function MapWorkspace(props: {
+  initialNodes: MapNode[];
+  initialEdges: MapEdge[];
+  initialFocusId: string | null;
 }) {
+  // React Flow needs its context above anything that reads node internals —
+  // the custom edge does, to follow the tween.
   return (
-    <div
-      className={`mapx-node hop-${hop} ${isFocus ? "focus" : ""} ${
-        isSelected ? "selected" : ""
-      } ${node.status === "parked" ? "parked" : ""} ${
-        isDropTarget ? "drop-target" : ""
-      } ${isLinkSource ? "link-source" : ""} ${
-        isLinkTarget ? "link-target" : ""
-      }`}
-      data-project-id={node.id}
-      style={{ transform: `translate(${point.x}px, ${point.y}px)` }}
-    >
-      <button
-        type="button"
-        className="mapx-node-label"
-        onClick={() => onSelect(node.id)}
-        onDoubleClick={() => onCentre(node.id)}
-        title={`${node.name} — double-click to centre`}
-      >
-        <span className="mapx-node-name">{node.name}</span>
-        {node.openTasks > 0 && (
-          <span className="mapx-node-count">{node.openTasks}</span>
-        )}
-      </button>
-      <button
-        type="button"
-        className="mapx-crosshair"
-        title="Drag onto another project — or click, then click the other one"
-        aria-label={`Connect ${node.name} to another project`}
-        onPointerDown={(e) => onDragStart(e, node.id)}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-        // A plain click (press and release without travelling to another node)
-        // arms click-to-connect, so the connector never depends on landing a
-        // drag on a small target.
-        onClick={() => onStartLink(node.id)}
-      >
-        <CrosshairIcon />
-      </button>
-    </div>
+    <ReactFlowProvider>
+      <MapWorkspaceInner {...props} />
+    </ReactFlowProvider>
   );
 }
 
-export function MapWorkspace({
+function MapWorkspaceInner({
   initialNodes,
   initialEdges,
   initialFocusId,
@@ -391,13 +134,18 @@ export function MapWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(initialFocusId);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Click-to-connect: the id we're drawing FROM, waiting for a target click.
-  const [linkFrom, setLinkFrom] = useState<string | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 960, h: 600 });
   const [isFullscreen, setFullscreen] = useState(false);
+  // Fixed for the session: a bubble's colour shouldn't change under you at
+  // midnight mid-session, and re-deriving it every render is pointless churn.
+  const [today] = useState(todayLocal);
+
+  // Bubble appearance: the shipped defaults unless this browser has saved an
+  // override through the style palette.
+  const [labValues, setLabValues] = useBubbleStyle();
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
@@ -405,10 +153,16 @@ export function MapWorkspace({
   // the default, and ?focus= is the only thing that opens centred.
   const overview = focusId === null;
 
-  // The stage owns its own pixel box; the SVG viewBox matches it 1:1 so node
-  // coordinates and edge coordinates are the same numbers.
+  // The layouts size themselves to the stage so the graph opens fitting the
+  // screen. Deliberately measured on the *body* — canvas plus panel — not the
+  // canvas: opening the side panel narrows the canvas, and measuring that would
+  // re-lay-out and slide the entire board out from under the pointer the moment
+  // you selected anything. (That cost a double-click its target: the first
+  // click selected, the board moved, the second click landed on empty pane.)
+  // Panning and zooming move the viewport over the composition; they never
+  // change where a node sits in graph space.
   useEffect(() => {
-    const el = canvasRef.current;
+    const el = bodyRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
@@ -439,20 +193,114 @@ export function MapWorkspace({
         : edges.filter((e) => reach.has(e.fromId) && reach.has(e.toId)),
     [overview, edges, reach],
   );
-  const targets = useMemo(
-    () =>
-      overview
-        ? layoutOverview(nodes, edges, size)
-        : layout(
-            reach,
-            visibleNodes.map((n) => n.id),
-            size,
-          ),
-    [overview, nodes, edges, reach, visibleNodes, size],
-  );
+  // A full re-layout is a deliberate event, not something that happens every
+  // time the graph changes. Adding a project, drawing a connection or removing
+  // one leaves every existing bubble exactly where it is — otherwise capturing
+  // an idea mid-meeting makes the whole board rearrange itself, which reads as
+  // a page reload rather than "a thing appeared". Relayout happens on: mount,
+  // switching between overview and focus, a resize, and the Tidy button.
+  const layoutKey = `${overview ? "overview" : focusId}|${Math.round(size.w)}x${Math.round(size.h)}|${labValues.ringGap}x${labValues.squash}`;
+  const [tidyCount, setTidy] = useState(0);
 
-  // Tween node positions rather than snapping. Edges are derived from the same
-  // interpolated points, so lines travel with their nodes instead of jumping a
+  const computeLayout = useCallback((): Map<string, Point> => {
+    const spacing = {
+      ringGap: labValues.ringGap,
+      squash: labValues.squash,
+    };
+    if (overview) return layoutOverview(nodes, edges, size, spacing);
+    // Focus mode is the same radial tree, just rooted on the focused project
+    // and cut off at two hops by `reach`.
+    const ids = visibleNodes.map((n) => n.id);
+    const adj = new Map<string, string[]>();
+    for (const id of ids) adj.set(id, []);
+    for (const e of visibleEdges) {
+      adj.get(e.fromId)?.push(e.toId);
+      adj.get(e.toId)?.push(e.fromId);
+    }
+    for (const [id, list] of adj) {
+      adj.set(
+        id,
+        list.sort((a, b) =>
+          (nodeById.get(a)?.name ?? "").localeCompare(
+            nodeById.get(b)?.name ?? "",
+          ),
+        ),
+      );
+    }
+    const { points } = radialTree(focusId as string, ids, adj, spacing);
+    const centred = new Map<string, Point>();
+    for (const [id, p] of points) {
+      centred.set(id, { x: size.w / 2 + p.x, y: size.h / 2 + p.y });
+    }
+    return centreVertically(centred, size);
+  }, [
+    overview,
+    nodes,
+    edges,
+    size,
+    visibleNodes,
+    visibleEdges,
+    focusId,
+    nodeById,
+    labValues.ringGap,
+    labValues.squash,
+  ]);
+
+  const [targets, setTargets] = useState<Map<string, Point>>(() => new Map());
+  const computeRef = useRef(computeLayout);
+  useEffect(() => {
+    computeRef.current = computeLayout;
+  }, [computeLayout]);
+
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    setTargets(computeRef.current());
+    // Frame whatever was just laid out. Waiting out the tween matters twice
+    // over: fitView reads live node positions, so firing early would fit the
+    // half-animated board, and by now the side panel has opened and narrowed
+    // the canvas — so the fit accounts for it instead of leaving nodes behind
+    // the panel. Only full relayouts refit; selecting or connecting must never
+    // move the viewport.
+    const t = setTimeout(() => {
+      void fitView({ padding: 0.16, duration: 320, maxZoom: 1 });
+    }, TWEEN_MS + 80);
+    return () => clearTimeout(t);
+    // computeLayout is deliberately read through a ref: this must fire when the
+    // view or the stage changes, NOT every time a node or edge does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey, tidyCount]);
+
+  // Nodes that appeared since the last layout get hung off whatever they're
+  // connected to; nodes that vanished are dropped. Nothing else moves.
+  useEffect(() => {
+    setTargets((prev) => {
+      const wanted = new Set(visibleNodes.map((n) => n.id));
+      const missing = visibleNodes.filter((n) => !prev.has(n.id));
+      const stale = [...prev.keys()].filter((id) => !wanted.has(id));
+      if (missing.length === 0 && stale.length === 0) return prev;
+      // Nothing placed yet — the layout effect above is about to run.
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      for (const id of stale) next.delete(id);
+      for (const n of missing) {
+        const link = visibleEdges.find(
+          (e) => e.fromId === n.id || e.toId === n.id,
+        );
+        const anchor = link
+          ? link.fromId === n.id
+            ? link.toId
+            : link.fromId
+          : "";
+        next.set(n.id, placeNear(n.id, anchor, next));
+      }
+      return next;
+    });
+  }, [visibleNodes, visibleEdges]);
+
+  // Tween node positions rather than snapping. The interpolated points are fed
+  // straight into React Flow's controlled `nodes`, and the custom edge reads
+  // live node positions, so lines travel with their nodes instead of jumping a
   // frame ahead — that's most of what makes re-centring feel native.
   const [points, setPoints] = useState<Map<string, Point>>(targets);
   const pointsRef = useRef(points);
@@ -500,50 +348,21 @@ export function MapWorkspace({
   // never yanks the board out from under you. Once you're centred on a project,
   // clicking a neighbour re-centres — that's the navigation model in focus mode.
   // Either way it's state, never a route change.
-  function select(id: string) {
-    // Armed to connect? Then a click on any other project completes the edge
-    // instead of selecting it.
-    if (linkFrom && linkFrom !== id) {
-      const from = linkFrom;
-      setLinkFrom(null);
-      void connect(from, id, "related");
-      return;
-    }
-    if (linkFrom === id) {
-      setLinkFrom(null);
-      return;
-    }
-    setSelectedId(id);
-    setSelectedEdgeId(null);
-    if (!overview) setFocusId(id);
-  }
+  const select = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setSelectedEdgeId(null);
+      if (!overview) setFocusId(id);
+    },
+    [overview],
+  );
 
   // Double-click (or the panel's button) centres from anywhere.
-  function centreOn(id: string) {
+  const centreOn = useCallback((id: string) => {
     setSelectedId(id);
     setSelectedEdgeId(null);
     setFocusId(id);
-  }
-
-  // A click on the handle arms click-to-connect — unless it was the tail of a
-  // real drag, which has already done the work.
-  function armLink(id: string) {
-    if (didDragRef.current) {
-      didDragRef.current = false;
-      return;
-    }
-    setLinkFrom(id);
-  }
-
-  // Esc backs out of an armed connection.
-  useEffect(() => {
-    if (!linkFrom) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLinkFrom(null);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [linkFrom]);
+  }, []);
 
   async function toggleFullscreen() {
     const el = stageRef.current;
@@ -556,115 +375,71 @@ export function MapWorkspace({
     }
   }
 
-  // ---- drag to connect ----
-  const [dragFrom, setDragFrom] = useState<string | null>(null);
-  const [dragOrigin, setDragOrigin] = useState<Point | null>(null);
-  const [dragPos, setDragPos] = useState<Point | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  // Pointer capture means the trailing click fires on the handle even when the
-  // pointer was released over another node — so a completed drag must not also
-  // arm click-to-connect.
-  const didDragRef = useRef(false);
-
-  function toStage(e: React.PointerEvent): Point {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }
-
-  function startDrag(e: React.PointerEvent, id: string) {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    didDragRef.current = false;
-    const origin = toStage(e);
-    setDragFrom(id);
-    setDragOrigin(origin);
-    setDragPos(origin);
-  }
-
-  function onDragMove(e: React.PointerEvent) {
-    if (!dragFrom) return;
-    const p = toStage(e);
-    if (dragOrigin && Math.hypot(p.x - dragOrigin.x, p.y - dragOrigin.y) > 5) {
-      didDragRef.current = true;
-    }
-    setDragPos(p);
-    const under = document.elementFromPoint(e.clientX, e.clientY);
-    const el = under?.closest<HTMLElement>("[data-project-id]");
-    const id = el?.dataset.projectId ?? null;
-    setDropTargetId(id && id !== dragFrom ? id : null);
-  }
-
-  async function onDragEnd(e: React.PointerEvent) {
-    const source = dragFrom;
-    const under = document.elementFromPoint(e.clientX, e.clientY);
-    const el = under?.closest<HTMLElement>("[data-project-id]");
-    const targetId = el?.dataset.projectId ?? null;
-    setDragFrom(null);
-    setDragOrigin(null);
-    setDragPos(null);
-    setDropTargetId(null);
-    if (!source || !targetId || targetId === source) return;
-    setLinkFrom(null);
-    await connect(source, targetId, "related");
-  }
-
   // ---- mutations ----
-  async function connect(
-    fromId: string,
-    toId: string,
-    kind: ProjectRelationKind,
-  ) {
-    try {
-      const res = await fetch("/api/project-relations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fromId, toId, kind }),
-      });
-      const data = (await res.json()) as { relation?: MapEdge; error?: string };
-      if (!res.ok || !data.relation) {
-        fail(data.error ?? "Could not connect those projects.");
-        return;
+  const connect = useCallback(
+    async (fromId: string, toId: string, kind: ProjectRelationKind) => {
+      try {
+        const res = await fetch("/api/project-relations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fromId, toId, kind }),
+        });
+        const data = (await res.json()) as {
+          relation?: MapEdge;
+          error?: string;
+        };
+        if (!res.ok || !data.relation) {
+          fail(data.error ?? "Could not connect those projects.");
+          return;
+        }
+        setEdges((es) => [...es, data.relation as MapEdge]);
+      } catch {
+        fail("Could not connect those projects.");
       }
-      setEdges((es) => [...es, data.relation as MapEdge]);
-    } catch {
-      fail("Could not connect those projects.");
-    }
-  }
+    },
+    [fail],
+  );
 
-  async function retype(edgeId: string, kind: ProjectRelationKind) {
-    const prev = edges;
-    setEdges((es) => es.map((e) => (e.id === edgeId ? { ...e, kind } : e)));
-    try {
-      const res = await fetch(`/api/project-relations/${edgeId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind }),
-      });
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
+  const retype = useCallback(
+    async (edgeId: string, kind: ProjectRelationKind) => {
+      const prev = edges;
+      setEdges((es) => es.map((e) => (e.id === edgeId ? { ...e, kind } : e)));
+      try {
+        const res = await fetch(`/api/project-relations/${edgeId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind }),
+        });
+        if (!res.ok) {
+          const data = (await res.json()) as { error?: string };
+          setEdges(prev);
+          fail(data.error ?? "Could not change that connection.");
+        }
+      } catch {
         setEdges(prev);
-        fail(data.error ?? "Could not change that connection.");
+        fail("Could not change that connection.");
       }
-    } catch {
-      setEdges(prev);
-      fail("Could not change that connection.");
-    }
-  }
+    },
+    [edges, fail],
+  );
 
-  async function disconnect(edgeId: string) {
-    const prev = edges;
-    setEdges((es) => es.filter((e) => e.id !== edgeId));
-    setSelectedEdgeId(null);
-    try {
-      const res = await fetch(`/api/project-relations/${edgeId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error();
-    } catch {
-      setEdges(prev);
-      fail("Could not remove that connection.");
-    }
-  }
+  const disconnect = useCallback(
+    async (edgeId: string) => {
+      const prev = edges;
+      setEdges((es) => es.filter((e) => e.id !== edgeId));
+      setSelectedEdgeId(null);
+      try {
+        const res = await fetch(`/api/project-relations/${edgeId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error();
+      } catch {
+        setEdges(prev);
+        fail("Could not remove that connection.");
+      }
+    },
+    [edges, fail],
+  );
 
   async function captureIdea(name: string, kind: ProjectRelationKind) {
     if (!selectedId) return;
@@ -717,6 +492,111 @@ export function MapWorkspace({
     }
   }
 
+  // ---- React Flow model ----
+  const activateEdge = useCallback((id: string) => {
+    setSelectedEdgeId((s) => (s === id ? null : id));
+  }, []);
+
+  const flowNodes = useMemo<FlowNode<ProjectNodeData>[]>(
+    () =>
+      visibleNodes.flatMap((n) => {
+        const p = points.get(n.id);
+        if (!p) return [];
+        return [
+          {
+            id: n.id,
+            type: "project",
+            position: p,
+            data: {
+              name: n.name,
+              state: projectGraphState(n.status, n.deadline, today),
+              badge: n.openTasks,
+              isCentre: n.id === focusId,
+              isFaded: (reach.get(n.id)?.hop ?? 0) > 1,
+              isSelected: n.id === selectedId,
+            },
+          },
+        ];
+      }),
+    [visibleNodes, points, selectedId, focusId, reach, today],
+  );
+
+  const flowEdges = useMemo<Edge<ProjectEdgeData>[]>(
+    () =>
+      visibleEdges.map((e) => ({
+        id: e.id,
+        type: "project",
+        source: e.fromId,
+        target: e.toId,
+        selected: e.id === selectedEdgeId,
+        data: {
+          kind: e.kind,
+          fromName: nodeById.get(e.fromId)?.name ?? "",
+          toName: nodeById.get(e.toId)?.name ?? "",
+          onActivate: activateEdge,
+        },
+      })),
+    [visibleEdges, selectedEdgeId, nodeById, activateEdge],
+  );
+
+  // A completed click-to-connect also bubbles a click to the node underneath.
+  // Without this the target project would be selected (and, in focus mode,
+  // centred) the instant you finished wiring it up.
+  const justConnected = useRef(false);
+  const clickConnect = useClickConnect();
+
+  // Double-click to centre is detected here rather than left to React Flow's
+  // `onNodeDoubleClick`. The browser only synthesises `dblclick` when both
+  // clicks share a target, and the first click re-renders the board — a node
+  // that is re-created, re-ordered or re-measured in that window swallows the
+  // gesture. Tracking two clicks on the same node id is immune to all of it.
+  const lastClick = useRef<{ id: string; at: number }>({ id: "", at: 0 });
+  const DOUBLE_CLICK_MS = 400;
+
+  const onNodeActivate = useCallback(
+    (id: string) => {
+      const now = performance.now();
+      const prev = lastClick.current;
+      lastClick.current = { id, at: now };
+      if (prev.id === id && now - prev.at < DOUBLE_CLICK_MS) {
+        lastClick.current = { id: "", at: 0 };
+        centreOn(id);
+        return;
+      }
+      select(id);
+    },
+    [centreOn, select],
+  );
+
+  // The second half of the same gesture, for when it misses. Selecting a
+  // project re-renders the board, and React Flow briefly renders a re-created
+  // node un-hittable — so the second click of a double-click can land on empty
+  // pane instead of the bubble. A pane click this soon after a node click is
+  // physically that second click, so honour it as the centring gesture rather
+  // than treating it as "clicked away".
+  const onPaneActivate = useCallback(() => {
+    const prev = lastClick.current;
+    if (prev.id && performance.now() - prev.at < DOUBLE_CLICK_MS) {
+      lastClick.current = { id: "", at: 0 };
+      centreOn(prev.id);
+      return;
+    }
+    setSelectedId(null);
+    setSelectedEdgeId(null);
+  }, [centreOn]);
+
+  const onConnect = useCallback(
+    (c: Connection) => {
+      if (!c.source || !c.target || c.source === c.target) return;
+      justConnected.current = true;
+      setTimeout(() => {
+        justConnected.current = false;
+      }, 0);
+      void connect(c.source, c.target, "related");
+    },
+    [connect],
+  );
+
   const selected = selectedId ? nodeById.get(selectedId) : undefined;
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
   const hiddenCount = nodes.length - visibleNodes.length;
@@ -728,6 +608,12 @@ export function MapWorkspace({
       }`}
       ref={stageRef}
     >
+      <GraphDefs />
+      <MapStyleLab
+        values={labValues}
+        onChange={setLabValues}
+        stageRef={stageRef}
+      />
       <div className="mapx-bar">
         <JumpBox nodes={nodes} onPick={centreOn} />
         {!overview && (
@@ -739,6 +625,15 @@ export function MapWorkspace({
             ‹ Everything
           </button>
         )}
+        <button
+          type="button"
+          className="ghost-btn mapx-tidy"
+          onClick={() => setTidy((n) => n + 1)}
+          title="Re-arrange the board around its connections"
+        >
+          Tidy
+        </button>
+        <GraphLegend className="mapx-legend" />
         <span className="muted mapx-bar-meta">
           {overview
             ? `${nodes.length} project${nodes.length === 1 ? "" : "s"} · ${edges.length} connection${edges.length === 1 ? "" : "s"}`
@@ -755,109 +650,59 @@ export function MapWorkspace({
         </button>
       </div>
 
-      {error && <p className="login-error mapx-error">{error}</p>}
-      {linkFrom && (
-        <p className="mapx-linking">
-          Click another project to connect it to{" "}
-          <strong>{nodeById.get(linkFrom)?.name}</strong>
-          <button
-            type="button"
-            className="row-action"
-            onClick={() => setLinkFrom(null)}
+      <div className="mapx-body" ref={bodyRef}>
+        {/* Overlaid, not stacked above the body: an error or the connect banner
+            appearing would otherwise shrink the stage, and the layout would
+            re-run and slide the whole board — the same jump the side panel used
+            to cause. Transient chrome must never be a layout input. */}
+        {error && <p className="login-error mapx-error">{error}</p>}
+        {clickConnect.armedFrom && (
+          <ConnectBanner
+            name={nodeById.get(clickConnect.armedFrom)?.name ?? "this project"}
+            onCancel={clickConnect.cancel}
+          />
+        )}
+
+        <div className="mapx-canvas">
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            // Positions are computed by the layouts above and re-derived on
+            // every focus change, so a hand-dragged node would be clobbered by
+            // the next tween. Nothing persists a manual position.
+            nodesDraggable={false}
+            // React Flow reorders the node DOM to raise a selected node. That
+            // detaches and re-inserts the element mid-gesture, which resets the
+            // browser's click tracking and kills the double-click that centres.
+            elevateNodesOnSelect={false}
+            nodesConnectable
+            // The custom edge puts role/tabIndex/Enter-Space on the path
+            // itself, so React Flow's own edge focus would be a second,
+            // duplicate tab stop on the wrapper.
+            edgesFocusable={false}
+            elementsSelectable
+            // The layouts already place a node by its centre.
+            nodeOrigin={[0.5, 0.5]}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            minZoom={0.2}
+            maxZoom={2}
+            zoomOnDoubleClick={false}
+            proOptions={{ hideAttribution: false }}
+            onNodeClick={(_, n) => {
+              if (justConnected.current) return;
+              onNodeActivate(n.id);
+            }}
+            onEdgeClick={(_, e) => activateEdge(e.id)}
+            onConnect={onConnect}
+            onClickConnectStart={clickConnect.onClickConnectStart}
+            onClickConnectEnd={clickConnect.onClickConnectEnd}
+            onPaneClick={onPaneActivate}
           >
-            Cancel
-          </button>
-        </p>
-      )}
-
-      <div className="mapx-body">
-        <div className="mapx-canvas" ref={canvasRef}>
-          <svg className="mapx-svg" width={size.w} height={size.h}>
-            <defs>
-              <marker
-                id="mapx-arrow"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M0 0 L10 5 L0 10 z" className="mapx-arrowhead" />
-              </marker>
-            </defs>
-            {visibleEdges.map((e) => {
-              const a = points.get(e.fromId);
-              const b = points.get(e.toId);
-              if (!a || !b) return null;
-              const end = trim(a, b);
-              const start = trim(b, a);
-              const flow = e.kind === "blocks" || e.kind === "depends_on";
-              return (
-                <line
-                  key={e.id}
-                  x1={start.x}
-                  y1={start.y}
-                  x2={end.x}
-                  y2={end.y}
-                  className={`mapx-edge kind-${e.kind} ${
-                    selectedEdgeId === e.id ? "on" : ""
-                  }`}
-                  markerEnd={flow ? "url(#mapx-arrow)" : undefined}
-                  // An SVG <line> isn't focusable on its own, so the edge
-                  // editor would be mouse-only without this.
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${nodeById.get(e.fromId)?.name} ${relationLabel(
-                    e.kind,
-                    "out",
-                  )} ${nodeById.get(e.toId)?.name} — edit connection`}
-                  onClick={() => {
-                    setSelectedEdgeId((s) => (s === e.id ? null : e.id));
-                  }}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter" || ev.key === " ") {
-                      ev.preventDefault();
-                      setSelectedEdgeId((s) => (s === e.id ? null : e.id));
-                    }
-                  }}
-                />
-              );
-            })}
-            {dragFrom && dragOrigin && dragPos && (
-              <line
-                x1={dragOrigin.x}
-                y1={dragOrigin.y}
-                x2={dragPos.x}
-                y2={dragPos.y}
-                className="mapx-drag-line"
-              />
-            )}
-          </svg>
-
-          {visibleNodes.map((n) => {
-            const p = points.get(n.id);
-            if (!p) return null;
-            return (
-              <Node
-                key={n.id}
-                node={n}
-                point={p}
-                hop={reach.get(n.id)?.hop ?? 0}
-                isFocus={n.id === focusId}
-                isSelected={n.id === selectedId}
-                isDropTarget={dropTargetId === n.id}
-                isLinkSource={linkFrom === n.id}
-                isLinkTarget={linkFrom !== null && linkFrom !== n.id}
-                onSelect={select}
-                onCentre={centreOn}
-                onStartLink={armLink}
-                onDragStart={startDrag}
-                onDragMove={onDragMove}
-                onDragEnd={onDragEnd}
-              />
-            );
-          })}
+            <Background variant={BackgroundVariant.Dots} gap={26} size={1} />
+            <Controls showInteractive={false} />
+          </ReactFlow>
 
           {visibleNodes.length === 0 && (
             <p className="ai-empty mapx-empty">No projects to map yet.</p>
@@ -910,7 +755,6 @@ export function MapWorkspace({
             allNodes={nodes}
             onFocus={overview ? select : centreOn}
             onCentre={() => centreOn(selected.id)}
-            onStartLink={() => setLinkFrom(selected.id)}
             isOverview={overview}
             onConnect={(toId, kind) => connect(selected.id, toId, kind)}
             onCapture={captureIdea}
@@ -951,7 +795,6 @@ function JumpBox({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      // globalThis.Node — the local `Node` here is the map's bubble component.
       if (!wrapRef.current?.contains(e.target as globalThis.Node)) {
         setOpen(false);
       }
@@ -1012,7 +855,6 @@ function DetailPanel({
   allNodes,
   onFocus,
   onCentre,
-  onStartLink,
   isOverview,
   onConnect,
   onCapture,
@@ -1029,7 +871,6 @@ function DetailPanel({
   allNodes: MapNode[];
   onFocus: (id: string) => void;
   onCentre: () => void;
-  onStartLink: () => void;
   isOverview: boolean;
   onConnect: (toId: string, kind: ProjectRelationKind) => Promise<void>;
   onCapture: (name: string, kind: ProjectRelationKind) => Promise<void>;
@@ -1159,9 +1000,6 @@ function DetailPanel({
             Centre on this
           </button>
         )}
-        <button type="button" className="ghost-btn ghost-btn-sm" onClick={onStartLink}>
-          Draw connection
-        </button>
         <Link href={`/projects/${node.id}`} className="ghost-btn ghost-btn-sm">
           Open project
         </Link>

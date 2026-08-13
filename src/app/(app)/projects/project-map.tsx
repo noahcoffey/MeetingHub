@@ -1,8 +1,39 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  ReactFlow,
+  ReactFlowProvider,
+  type Connection,
+  type Edge,
+  type Node as FlowNode,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import type { ProjectRelationKind, ProjectStatus } from "@/db/schema";
+import {
+  adjacencyOf,
+  radialTree,
+  type Point,
+} from "../project-graph-layout";
+import {
+  ConnectBanner,
+  GraphDefs,
+  GraphLegend,
+  edgeTypes,
+  nodeTypes,
+  useClickConnect,
+  type ProjectEdgeData,
+  type ProjectNodeData,
+} from "../project-graph";
+import {
+  GRAPH_STATES,
+  projectGraphState,
+  todayLocal,
+} from "../project-graph-state";
 import {
   KIND_OPTION_LABEL,
   RELATION_KINDS,
@@ -13,6 +44,7 @@ export type MapNode = {
   id: string;
   name: string;
   status: ProjectStatus;
+  deadline: string | null;
   hop: number;
 };
 
@@ -26,147 +58,63 @@ export type MapEdge = {
   createdInMeetingTitle: string | null;
 };
 
+// The preview's own coordinate space. React Flow's fitView scales whatever this
+// produces into the card, so these are proportions rather than pixels.
 const WIDTH = 760;
 const HEIGHT = 520;
-const RING = [0, 175, 250];
+const TWEEN_MS = 380;
 
-const CrosshairIcon = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden>
-    <circle cx="10" cy="10" r="6" strokeWidth="1.5" />
-    <path
-      d="M10 1.5v3M10 15.5v3M1.5 10h3M15.5 10h3"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-  </svg>
-);
+// Below this the canvas is replaced by the list further down: a pannable graph
+// squeezed into a phone-width card is worse than a list, and React Flow in a
+// zero-size container misbehaves — so it's unmounted, not just hidden.
+const WIDE = "(min-width: 821px)";
 
-type Placed = MapNode & { x: number; y: number };
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
-// Deterministic polar layout: centre, then one ring per hop with the ring's
-// nodes spread evenly. No simulation — positions are stable across renders and
-// there's no layout library in this app to reach for.
-function layout(nodes: MapNode[]): Map<string, Placed> {
-  const placed = new Map<string, Placed>();
-  const byHop = new Map<number, MapNode[]>();
+// Same radial tree as /map, rooted on the project whose hub this is. The server
+// already limited the graph to `depth` hops, so the tree depth matches the hop
+// count and a node's satellites sit with it rather than in a shared ring.
+function layout(
+  nodes: MapNode[],
+  edges: MapEdge[],
+  centreId: string,
+): Map<string, Point> {
+  if (nodes.length === 0) return new Map();
+  const adj = adjacencyOf(nodes, edges);
+  const ids = nodes.map((n) => n.id);
+  const { points } = radialTree(centreId, ids, adj);
+  const out = new Map<string, Point>();
+  for (const [id, p] of points) {
+    out.set(id, { x: WIDTH / 2 + p.x, y: HEIGHT / 2 + p.y });
+  }
+  // Anything the BFS didn't reach (shouldn't happen — the server only returns
+  // the centre's component) still needs somewhere to be.
+  let spare = 0;
   for (const n of nodes) {
-    const list = byHop.get(n.hop) ?? [];
-    list.push(n);
-    byHop.set(n.hop, list);
+    if (out.has(n.id)) continue;
+    out.set(n.id, { x: 80 + spare * 170, y: HEIGHT - 40 });
+    spare++;
   }
-  const cx = WIDTH / 2;
-  const cy = HEIGHT / 2;
-  // Scale the rings so the outermost one fills the canvas whatever the depth,
-  // leaving a margin for the bubbles' own width/height. Separate x and y
-  // factors because the canvas is much wider than it is tall.
-  const maxHop = Math.max(...nodes.map((n) => n.hop), 1);
-  const maxRadius = RING[Math.min(maxHop, RING.length - 1)];
-  const fx = (WIDTH / 2 - 70) / maxRadius;
-  const fy = (HEIGHT / 2 - 30) / maxRadius;
-  for (const [hop, list] of byHop) {
-    if (hop === 0) {
-      for (const n of list) placed.set(n.id, { ...n, x: cx, y: cy });
-      continue;
-    }
-    const radius = RING[Math.min(hop, RING.length - 1)];
-    // Start at 12 o'clock and offset even rings so ring 2 doesn't hide behind
-    // ring 1's spokes.
-    const offset = hop % 2 === 0 ? Math.PI / list.length : 0;
-    list.forEach((n, i) => {
-      const angle = (i / list.length) * Math.PI * 2 - Math.PI / 2 + offset;
-      placed.set(n.id, {
-        ...n,
-        x: cx + Math.cos(angle) * radius * fx,
-        y: cy + Math.sin(angle) * radius * fy,
-      });
-    });
-  }
-  return placed;
+  return out;
 }
 
-// Node bubbles are wide and short, so a single circular inset would leave a
-// vertical edge floating in space while a horizontal one still ran under the
-// label. Trim to where the line exits an ellipse of the bubble's proportions.
-const NODE_RX = 58;
-const NODE_RY = 17;
-
-function trim(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-): { x: number; y: number } {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len;
-  const uy = dy / len;
-  const by = 1 / Math.hypot(ux / NODE_RX, uy / NODE_RY);
-  return { x: x2 - ux * by, y: y2 - uy * by };
-}
-
-// Hoisted to module scope for the same reason as the dependency view's Row:
-// every pointermove during a drag updates parent state, and a component defined
-// inline would be a new type each render, remounting the node that holds
-// pointer capture and freezing the drag mid-gesture.
-function Node({
-  node,
-  isCentre,
-  isDropTarget,
-  onOpen,
-  onDragStart,
-  onDragMove,
-  onDragEnd,
-}: {
-  node: Placed;
-  isCentre: boolean;
-  isDropTarget: boolean;
-  onOpen: (id: string) => void;
-  onDragStart: (e: React.PointerEvent, id: string) => void;
-  onDragMove: (e: React.PointerEvent) => void;
-  onDragEnd: (e: React.PointerEvent) => void;
+export function ProjectMap(props: {
+  centreId: string;
+  initialNodes: MapNode[];
+  initialEdges: MapEdge[];
+  depth: 1 | 2;
+  truncated: boolean;
 }) {
   return (
-    <div
-      className={`pmap-node ${isCentre ? "centre" : ""} ${
-        node.status === "parked" ? "parked" : ""
-      } ${node.status === "archived" ? "archived" : ""} ${
-        isDropTarget ? "drop-target" : ""
-      }`}
-      data-project-id={node.id}
-      // Percentages, not pixels: the canvas is locked to the viewBox's aspect
-      // ratio, so a percentage lands on exactly the same spot as the SVG
-      // coordinate it came from at any container width. Pixel positioning would
-      // put nodes and edges in different coordinate spaces.
-      style={{
-        left: `${(node.x / WIDTH) * 100}%`,
-        top: `${(node.y / HEIGHT) * 100}%`,
-      }}
-    >
-      <button
-        type="button"
-        className="pmap-node-label"
-        onClick={() => onOpen(node.id)}
-        title={node.name}
-      >
-        {node.name}
-      </button>
-      <button
-        type="button"
-        className="pmap-crosshair"
-        title="Drag to another project to connect them"
-        aria-label={`Connect ${node.name} to another project`}
-        onPointerDown={(e) => onDragStart(e, node.id)}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-      >
-        <CrosshairIcon />
-      </button>
-    </div>
+    <ReactFlowProvider>
+      <ProjectMapInner {...props} />
+    </ReactFlowProvider>
   );
 }
 
-export function ProjectMap({
+function ProjectMapInner({
   centreId,
   initialNodes,
   initialEdges,
@@ -188,77 +136,78 @@ export function ProjectMap({
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<ProjectRelationKind>("related");
   const [busy, setBusy] = useState(false);
+  const [today] = useState(todayLocal);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dragFrom, setDragFrom] = useState<string | null>(null);
-  const [dragOrigin, setDragOrigin] = useState<{ x: number; y: number } | null>(
-    null,
+  // Starts false so the server render and the first client render agree; the
+  // effect below turns the canvas on where there's room for it.
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE);
+    const apply = () => setWide(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const targets = useMemo(
+    () => layout(nodes, edges, centreId),
+    [nodes, edges, centreId],
   );
-  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-
-  const placed = useMemo(() => layout(nodes), [nodes]);
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 
-  function fail(message: string) {
+  // Tween, like /map: adding a connected idea used to snap every bubble to a
+  // new spot at once, which reads as the diagram reloading rather than growing.
+  const [placed, setPlaced] = useState<Map<string, Point>>(targets);
+  const placedRef = useRef(placed);
+  const frameRef = useRef<number | null>(null);
+  useEffect(() => {
+    placedRef.current = placed;
+  }, [placed]);
+  useEffect(() => {
+    const from = new Map(placedRef.current);
+    const centre = { x: WIDTH / 2, y: HEIGHT / 2 };
+    const start = performance.now();
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / TWEEN_MS);
+      const k = easeInOutCubic(t);
+      const next = new Map<string, Point>();
+      for (const [id, to] of targets) {
+        const a = from.get(id) ?? centre;
+        next.set(id, { x: a.x + (to.x - a.x) * k, y: a.y + (to.y - a.y) * k });
+      }
+      setPlaced(next);
+      if (t < 1) frameRef.current = requestAnimationFrame(step);
+    };
+    frameRef.current = requestAnimationFrame(step);
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    };
+  }, [targets]);
+
+  const fail = useCallback((message: string) => {
     setError(message);
     setTimeout(() => setError(null), 2500);
-  }
+  }, []);
 
-  function open(id: string) {
-    if (id === centreId) return;
-    router.push(`/projects/${id}?tab=map`);
-  }
+  // The hub map is a quick look, so a click leaves for that project's own hub
+  // rather than re-centring in place — /map is where you stay and explore.
+  const open = useCallback(
+    (id: string) => {
+      if (id === centreId) return;
+      router.push(`/projects/${id}?tab=map`);
+    },
+    [centreId, router],
+  );
 
-  // Pointer coords arrive in CSS pixels; the rubber band is drawn inside the
-  // SVG's viewBox, so convert rather than mixing the two spaces.
-  function toViewBox(e: React.PointerEvent): { x: number; y: number } {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return { x: 0, y: 0 };
-    return {
-      x: ((e.clientX - rect.left) / rect.width) * WIDTH,
-      y: ((e.clientY - rect.top) / rect.height) * HEIGHT,
-    };
-  }
-
-  function startDrag(e: React.PointerEvent, id: string) {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const origin = toViewBox(e);
-    setDragFrom(id);
-    setDragOrigin(origin);
-    setDragPos(origin);
-  }
-
-  function onDragMove(e: React.PointerEvent) {
-    if (!dragFrom) return;
-    setDragPos(toViewBox(e));
-    const under = document.elementFromPoint(e.clientX, e.clientY);
-    const el = under?.closest<HTMLElement>("[data-project-id]");
-    const id = el?.dataset.projectId ?? null;
-    setDropTargetId(id && id !== dragFrom ? id : null);
-  }
-
-  async function onDragEnd(e: React.PointerEvent) {
-    const source = dragFrom;
-    const under = document.elementFromPoint(e.clientX, e.clientY);
-    const el = under?.closest<HTMLElement>("[data-project-id]");
-    const targetId = el?.dataset.projectId ?? null;
-    setDragFrom(null);
-    setDragOrigin(null);
-    setDragPos(null);
-    setDropTargetId(null);
-    if (!source || !targetId || targetId === source) return;
-
+  async function connect(fromId: string, toId: string) {
     try {
       const res = await fetch("/api/project-relations", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fromId: source, toId: targetId, kind: "related" }),
+        body: JSON.stringify({ fromId, toId, kind: "related" }),
       });
-      const data = (await res.json()) as {
-        relation?: MapEdge;
-        error?: string;
-      };
+      const data = (await res.json()) as { relation?: MapEdge; error?: string };
       if (!res.ok || !data.relation) {
         fail(data.error ?? "Could not connect those projects.");
         return;
@@ -330,6 +279,7 @@ export function ProjectMap({
           id: data.project!.id,
           name: data.project!.name,
           status: "parked",
+          deadline: null,
           hop: 1,
         },
       ]);
@@ -362,6 +312,73 @@ export function ProjectMap({
     }
   }
 
+  // ---- React Flow model ----
+  const activateEdge = useCallback((id: string) => {
+    setSelectedEdge((s) => (s === id ? null : id));
+  }, []);
+
+  const flowNodes = useMemo<FlowNode<ProjectNodeData>[]>(
+    () =>
+      nodes.flatMap((n) => {
+        const p = placed.get(n.id);
+        if (!p) return [];
+        return [
+          {
+            id: n.id,
+            type: "project" as const,
+            position: p,
+            data: {
+              name: n.name,
+              state: projectGraphState(n.status, n.deadline, today),
+              // Open-task counts aren't in the hub payload; the tasks tab has them.
+              badge: null,
+              isCentre: n.id === centreId,
+              isFaded: n.hop > 1,
+              isSelected: false,
+            },
+          },
+        ];
+      }),
+    [nodes, placed, centreId, today],
+  );
+
+  const flowEdges = useMemo<Edge<ProjectEdgeData>[]>(
+    () =>
+      edges.map((e) => ({
+        id: e.id,
+        type: "project",
+        source: e.fromId,
+        target: e.toId,
+        selected: e.id === selectedEdge,
+        data: {
+          kind: e.kind,
+          fromName: nodeById.get(e.fromId)?.name ?? "",
+          toName: nodeById.get(e.toId)?.name ?? "",
+          onActivate: activateEdge,
+        },
+      })),
+    [edges, selectedEdge, nodeById, activateEdge],
+  );
+
+  // A finished click-to-connect also bubbles a click to the node underneath —
+  // which here would navigate away from the project you were just wiring up.
+  // A ref, not state: the click lands in the same event dispatch, so a state
+  // update wouldn't be visible to the handler that has to skip.
+  const justConnected = useRef(false);
+  const clickConnect = useClickConnect();
+  function onConnect(c: Connection) {
+    if (!c.source || !c.target || c.source === c.target) return;
+    justConnected.current = true;
+    setTimeout(() => {
+      justConnected.current = false;
+    }, 0);
+    void connect(c.source, c.target);
+  }
+
+  const legendStates = nodes.some((n) => n.status === "archived")
+    ? [...GRAPH_STATES, "archived" as const]
+    : GRAPH_STATES;
+
   const selected = edges.find((e) => e.id === selectedEdge) ?? null;
   const parked = nodes.filter((n) => n.status === "parked");
   // The narrow-screen list: the centre's own edges.
@@ -371,6 +388,7 @@ export function ProjectMap({
 
   return (
     <div className="pmap">
+      <GraphDefs />
       <div className="pmap-toolbar">
         <div className="range-toggle pmap-hops" role="group" aria-label="Map depth">
             <a
@@ -434,6 +452,12 @@ export function ProjectMap({
       </div>
 
       {error && <p className="login-error pmap-error">{error}</p>}
+      {clickConnect.armedFrom && (
+        <ConnectBanner
+          name={nodeById.get(clickConnect.armedFrom)?.name ?? "this project"}
+          onCancel={clickConnect.cancel}
+        />
+      )}
       {truncated && (
         <p className="muted empty-sm">
           Showing the first {nodes.length} projects — this map is larger than
@@ -448,93 +472,40 @@ export function ProjectMap({
         </p>
       )}
 
-      {/* Canvas: hidden on narrow screens, where the list below takes over —
-          a pannable graph would push the sticky top bar off-screen. */}
-      <div className="pmap-canvas" ref={containerRef}>
-        <svg
-          className="pmap-svg"
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <defs>
-            <marker
-              id="pmap-arrow"
-              viewBox="0 0 10 10"
-              refX="9"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M0 0 L10 5 L0 10 z" className="pmap-arrowhead" />
-            </marker>
-          </defs>
-          {edges.map((e) => {
-            const a = placed.get(e.fromId);
-            const b = placed.get(e.toId);
-            if (!a || !b) return null;
-            const end = trim(a.x, a.y, b.x, b.y);
-            const start = trim(b.x, b.y, a.x, a.y);
-            const flow = e.kind === "blocks" || e.kind === "depends_on";
-            return (
-              <line
-                key={e.id}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                className={`pmap-edge kind-${e.kind} ${
-                  selectedEdge === e.id ? "on" : ""
-                }`}
-                markerEnd={flow ? "url(#pmap-arrow)" : undefined}
-                // An SVG <line> takes no focus of its own, so without these the
-                // edge editor is mouse-only.
-                role="button"
-                tabIndex={0}
-                aria-label={`${nodeById.get(e.fromId)?.name} ${relationLabel(
-                  e.kind,
-                  "out",
-                )} ${nodeById.get(e.toId)?.name} — edit connection`}
-                onClick={() =>
-                  setSelectedEdge((s) => (s === e.id ? null : e.id))
-                }
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" || ev.key === " ") {
-                    ev.preventDefault();
-                    setSelectedEdge((s) => (s === e.id ? null : e.id));
-                  }
-                }}
-              />
-            );
-          })}
-          {dragFrom && dragOrigin && dragPos && (
-            <line
-              x1={dragOrigin.x}
-              y1={dragOrigin.y}
-              x2={dragPos.x}
-              y2={dragPos.y}
-              className="pmap-drag-line"
-            />
-          )}
-        </svg>
-
-        {nodes.map((n) => {
-          const p = placed.get(n.id);
-          if (!p) return null;
-          return (
-            <Node
-              key={n.id}
-              node={p}
-              isCentre={n.id === centreId}
-              isDropTarget={dropTargetId === n.id}
-              onOpen={open}
-              onDragStart={startDrag}
-              onDragMove={onDragMove}
-              onDragEnd={onDragEnd}
-            />
-          );
-        })}
-      </div>
+      {wide && (
+        <div className="pmap-canvas">
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodesDraggable={false}
+            nodesConnectable
+            // The custom edge puts role/tabIndex/Enter-Space on the path
+            // itself, so React Flow's own edge focus would be a second,
+            // duplicate tab stop on the wrapper.
+            edgesFocusable={false}
+            nodeOrigin={[0.5, 0.5]}
+            fitView
+            fitViewOptions={{ padding: 0.12 }}
+            minZoom={0.3}
+            maxZoom={1.6}
+            zoomOnDoubleClick={false}
+            onNodeClick={(_, n) => {
+              if (justConnected.current) return;
+              open(n.id);
+            }}
+            onEdgeClick={(_, e) => activateEdge(e.id)}
+            onConnect={onConnect}
+            onClickConnectStart={clickConnect.onClickConnectStart}
+            onClickConnectEnd={clickConnect.onClickConnectEnd}
+            onPaneClick={() => setSelectedEdge(null)}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+        </div>
+      )}
 
       {selected && (
         <div className="pmap-edge-panel">
@@ -637,10 +608,18 @@ export function ProjectMap({
         })}
       </ul>
 
-      <p className="muted pmap-legend">
-        Drag a node&apos;s crosshair onto another to connect them. Click a line to
-        retype or remove it.
-      </p>
+      {wide && (
+        <div className="pmap-footnote">
+          {/* An archived project keeps its own Map tab, so the legend has to
+              explain a colour the live surfaces never show. */}
+          <GraphLegend states={legendStates} />
+          <p className="muted pmap-legend">
+            Drag a node&apos;s crosshair onto another to connect them — or click
+            the crosshair, then the other project. Click a line to retype or
+            remove it.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
