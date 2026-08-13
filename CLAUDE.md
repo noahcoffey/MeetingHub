@@ -40,7 +40,9 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   `summaries.ts` + `summary-context.ts` (Sunday-Summary storage + the week-context aggregate).
 - `src/app/(app)/` — the authed UI: Dashboard landing page (`page.tsx`, aggregates via
   `lib/dashboard.ts`, auto-refreshes every 60s), day meeting workspace (`meetings/` + `meetings/[id]`),
-  `projects/` (list + `[id]` hub page), `people/` (list + `[id]` hub: matched meetings, agenda
+  `projects/` (list + `?view=parked` idea shelf + `[id]` hub page, whose tabs include a **Map** of
+  project↔project relations), `map/` (the workspace graph as a full-height, client-driven app
+  surface — main nav, under the `projects` toggle), `people/` (list + `[id]` hub: matched meetings, agenda
   queue, waiting-on, linked titles), `notes/` (list + `[id]` full-page editor with an
   attachments rail), `journal/`, `tasks/` (Open/Completed/Dependencies views;
   Open supports Group By due date/created/project/priority/waiting, plus a collapsed
@@ -117,8 +119,13 @@ Defined in `src/db/schema.ts`. Core tables:
   tab). Toggled per row under Settings → Workspaces.
 - `users` — single seeded user; `password_enabled` flag flips off once a passkey is registered.
 - `webauthn_credentials` / `recovery_codes` — passkeys and one-time recovery codes for that user.
-- `projects` — larger initiatives that group meetings and tasks (`status` active|archived with
-  `archived_at`, optional `deadline`). Child table `project_links` (saved URLs; content type
+- `projects` — larger initiatives that group meetings and tasks (`status` active|archived|**parked**
+  with `archived_at`, optional `deadline`). **parked** = an idea captured mid-meeting that isn't a
+  real initiative yet; promoting it is a status flip. `listProjects` filters on an explicit status
+  allow-list (`includeArchived` / `includeParked`, neither = active only), which is the single
+  choke point keeping parked rows out of /projects, the dashboard, project pickers,
+  `getProjectSummaries` and the Sunday-Summary context. Search deliberately DOES return them,
+  flagged `parked: true` (⌘K shows a "Parked idea" subtitle). Shelf at `/projects?view=parked`. Child table `project_links` (saved URLs; content type
   inferred from the URL at render time, not stored; icons are site favicons proxied via
   `/api/favicon`, glyph fallback). Links carry an optional `drive_folder_id` placing them inside
   the project's Drive folder tree — the hub's unified **Files & Links** tab and overview card show
@@ -137,6 +144,54 @@ Defined in `src/db/schema.ts`. Core tables:
   milestone). Undated milestones are hub-only; completed ones are excluded from all aggregates.
   The milestone picker in `ActionItemsList` renders only when a `milestones` prop is passed (the
   hub tasks tab).
+- `project_relations` — directed edge between two projects, `kind` related|blocks|depends_on|spun_from
+  (default `related`), optional `note`, plus `created_in_meeting_id` (set null) recording which
+  meeting the connection was raised in. Both project FKs cascade; no workspace_id — scope inherits
+  from the endpoints (`lib/project-relations.ts` rejects self/duplicate/cross-workspace edges, and
+  **one edge per pair regardless of direction** — flipping or retyping goes through `updateRelation`).
+  Cycle checks apply ONLY to the two *flow* kinds, normalized so `blocks(A,B)` and `depends_on(B,A)`
+  are the same arrow; `related`/`spun_from` are unconstrained. The lib checks can be raced, so
+  migration **0038** (hand-written, like 0004's pg_trgm — not mirrored in `schema.ts`) adds a
+  no-self-edge CHECK and a unique index on `(LEAST(from_id,to_id), GREATEST(from_id,to_id))`;
+  `addRelation` maps a `23505` back to `duplicate` (Drizzle wraps driver errors, so the code sits on
+  `cause`). `captureRelatedProject` runs the project insert and the edge in **one transaction**.
+  Session routes taking a `projectId` authorize through the shared `api/_lib/project-guard.ts`
+  (exists → workspace → `projects` feature); relation PATCH/DELETE resolve the edge first and guard
+  via its `fromId`, since an edge id alone carries no scope. Surfaces: the meeting rail's
+  **Related projects** section (type-ahead to link an existing project, or type a new name to
+  create a parked project + edge in one request via `POST /api/project-relations/capture`) and the
+  project hub's **Map** tab (`projects/project-map.tsx` — a small static radial preview, links out
+  to the real thing). No v1/MCP exposure yet.
+- **`/map`** (`(app)/map/map-workspace.tsx`) is the app-like surface for the graph, and the reason
+  there's no graph library here: it's hand-rolled SVG + absolutely-positioned HTML nodes. Shape to
+  preserve when touching it:
+  - **Two modes off one `focusId` state.** `null` = **overview**, the default: every project in the
+    workspace, connected or not, as one board — connected components as compact constellations up
+    top (ring radius is capped, not stretched), single unconnected projects packed into rows
+    beneath, the whole composition vertically centred. Set = **focus**, a two-hop radial around one
+    project. In overview a click only *selects* (opens the panel) so the board never moves under
+    you; centring is explicit (panel button, double-click, or the Jump box), and "‹ Everything"
+    goes back. In focus mode a click re-centres.
+  - **One server load, then no navigations.** The page ships the whole workspace graph; every mode
+    change is state, so the URL never changes. `?focus=` only seeds the starting node.
+  - **The stage never scrolls.** A ResizeObserver feeds the live pixel box into the layout, the SVG
+    is sized 1:1 with it, and the radial layout always fits — that's why there's no pan/zoom, and
+    why nothing must introduce overflow. Full-screen is the browser Fullscreen API on the stage.
+  - **Positions are tweened** (rAF + easeInOutCubic, ~380ms) and edges are drawn from the same
+    interpolated points, so lines travel with their nodes. Nodes are placed with `transform` +
+    `translate: -50% -50%`, not `left/top`.
+  - In focus mode, two hops max, and the outer ring fans around **its own parent's angle** so an
+    edge reads as a branch instead of a chord through the centre. Anything further out is reached
+    via the Jump box or by going back to the overview.
+  - **Connecting works two ways in both modes**: drag a node's handle onto another, or *click* the
+    handle (or the panel's "Draw connection") to arm click-to-connect and click the target — Esc or
+    Cancel backs out. The click path exists because a drag onto a small handle is easy to miss.
+    Pointer capture makes the trailing click fire on the handle even when released elsewhere, so a
+    completed drag sets a `didDrag` ref that suppresses the arm — don't remove that guard.
+  - The **side panel** opens on selection: header, connections (retype/disconnect/refocus inline),
+    connect-or-create type-ahead, and open tasks with quick-add (content only — no due date,
+    priority, or recurrence) via `GET/POST /api/action-items?projectId=` and a `status: done` PATCH.
+    Node badges show open-task counts and update optimistically with the panel.
 - `notes` — first-class reference notes: `title` + markdown `notes` body with `notes_updated_at`
   (same autosave/conflict contract as meeting/journal notes, so the shared `NotesEditor` is reused).
   Join tables `note_projects` / `note_meetings` (composite PK, FKs cascade) attach a note to any
@@ -175,8 +230,10 @@ Defined in `src/db/schema.ts`. Core tables:
   `waiting_on_person_id` (FK people, set null) or free-text `owner_name`; the lib derives `owner`
   from those two (`normalizeWaiting`). Shared `toClientItem` mapper lives in
   `(app)/action-item-mapper.ts`.
-- Meeting rail sections (top to bottom): Agenda (matched people's queue) · From last time (open
-  items from earlier same-title occurrences) · Action items · Notes · Description.
+- Meeting rail sections (top to bottom): Agenda (matched people's queue) · Related projects
+  (capture adjacent work; hidden when the `projects` feature is off, and shows a "tag this meeting
+  to a project" hint when the meeting has no `project_id`) · From last time (open items from
+  earlier same-title occurrences) · Action items · Notes · Description.
 - `task_dependencies` — directed edge: `task_id` depends on `depends_on_id`. Both FKs cascade
   (an edge dies with either task). `lib/task-dependencies.ts` rejects self/duplicate/cycle edges
   server-side; the Tasks → Dependencies view is drag-to-connect, and blocked tasks (open
@@ -279,7 +336,11 @@ AI synthesis/digests **inside the app** (note ingest and weekly-summary storage/
 *generation* always happens outside — AI notes are pushed via `/api/ingest`, and the Sunday
 Summary is produced by the local agent in `tools/sunday-summary` and pushed via
 `PUT /api/v1/summaries`; never add an LLM dependency or scheduler to the app), task-manager
-migration, semantic/vector search, bidirectional links/graph, multi-user/sharing.
+migration, semantic/vector search, multi-user/sharing.
+
+Note: a project↔project graph **is** built now (`project_relations` + the hub's Map tab) — it
+replaced the former "bidirectional links/graph" entry on this list. That decision is scoped to
+*projects*: a general wiki-style backlink graph across notes/meetings is still out.
 
 ## Companion docs
 

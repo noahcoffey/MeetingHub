@@ -22,6 +22,7 @@ const CONTENT_TABLES = [
   "notes",
   "project_milestones",
   "project_links",
+  "project_relations",
   "agenda_items",
   "person_meeting_titles",
   "people",
