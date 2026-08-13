@@ -21,6 +21,9 @@ import { getActiveWorkspace } from "@/lib/workspace-context";
 import { isFeatureEnabled } from "@/lib/workspaces";
 import { NewProjectForm } from "./new-project-form";
 import { ArchivedProjects } from "./archived-projects";
+import { ParkedProjects } from "./parked-projects";
+
+type ProjectsView = "active" | "parked" | "archived";
 import { UntaggedTriage, type UntaggedInboxRow } from "./untagged-triage";
 
 export const dynamic = "force-dynamic";
@@ -107,21 +110,35 @@ export default async function ProjectsPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
-  const { view } = await searchParams;
-  const isArchived = view === "archived";
+  const { view: viewParam } = await searchParams;
+  const view: ProjectsView =
+    viewParam === "archived" || viewParam === "parked" ? viewParam : "active";
   const workspace = await getActiveWorkspace();
   if (!isFeatureEnabled(workspace, "projects")) redirect("/");
   const workspaceId = workspace.id;
 
-  if (isArchived) {
+  if (view === "archived") {
     const all = await listProjects(workspaceId, { includeArchived: true });
     const archived = all
       .filter((p) => p.status === "archived")
       .map((p) => ({ id: p.id, name: p.name }));
     return (
       <div className="page">
-        <ProjectsToolbar isArchived />
+        <ProjectsToolbar view={view} />
         <ArchivedProjects initial={archived} />
+      </div>
+    );
+  }
+
+  if (view === "parked") {
+    const all = await listProjects(workspaceId, { includeParked: true });
+    const parked = all
+      .filter((p) => p.status === "parked")
+      .map((p) => ({ id: p.id, name: p.name }));
+    return (
+      <div className="page">
+        <ProjectsToolbar view={view} />
+        <ParkedProjects initial={parked} />
       </div>
     );
   }
@@ -277,7 +294,7 @@ export default async function ProjectsPage({
 
   return (
     <div className="page">
-      <ProjectsToolbar isArchived={false} />
+      <ProjectsToolbar view="active" />
       {summaries.length === 0 ? (
         <p className="muted empty">No projects yet.</p>
       ) : (
@@ -545,28 +562,41 @@ function MilestoneMarker({
 
 type ProjectOpt = { id: string; name: string };
 
-function ProjectsToolbar({ isArchived }: { isArchived: boolean }) {
+const VIEW_SUBTITLE: Record<ProjectsView, string> = {
+  active: "Active projects and their open work.",
+  parked: "Ideas captured in meetings, waiting to become real projects.",
+  archived: "Archived projects.",
+};
+
+function ProjectsToolbar({ view }: { view: ProjectsView }) {
   return (
     <div className="day-toolbar">
       <div className="day-toolbar-id">
         <h1 className="page-title">Projects</h1>
-        <p className="muted page-subtitle">
-          {isArchived ? "Archived projects." : "Active projects and their open work."}
-        </p>
+        <p className="muted page-subtitle">{VIEW_SUBTITLE[view]}</p>
       </div>
       <div className="day-toolbar-controls">
         <div className="range-toggle view-toggle">
-          <Link href="/projects" className={`range-btn ${!isArchived ? "is-active" : ""}`}>
+          <Link
+            href="/projects"
+            className={`range-btn ${view === "active" ? "is-active" : ""}`}
+          >
             Active
           </Link>
           <Link
+            href="/projects?view=parked"
+            className={`range-btn ${view === "parked" ? "is-active" : ""}`}
+          >
+            Parked
+          </Link>
+          <Link
             href="/projects?view=archived"
-            className={`range-btn ${isArchived ? "is-active" : ""}`}
+            className={`range-btn ${view === "archived" ? "is-active" : ""}`}
           >
             Archived
           </Link>
         </div>
-        {!isArchived && <NewProjectForm />}
+        {view === "active" && <NewProjectForm />}
       </div>
     </div>
   );

@@ -26,6 +26,9 @@ import { ActionItemsList } from "../../action-items-list";
 import { MeetingRail } from "./meeting-rail";
 import { RailResizeHandle, RailToggle } from "../../chrome";
 import { MeetingProjectPicker } from "./meeting-project-picker";
+import { RelatedProjectsRail } from "./related-projects-rail";
+import { listRelationsForProject } from "@/lib/project-relations";
+import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +58,8 @@ export default async function MeetingDetailPage({
     agenda,
     peopleOptions,
     seriesItems,
+    workspace,
+    relations,
   ] = await Promise.all([
     listOpenActionItems(workspaceId),
     listProjects(workspaceId),
@@ -64,7 +69,10 @@ export default async function MeetingDetailPage({
     getAgendaForMeeting(meeting),
     listPeopleNames(workspaceId),
     listOpenItemsFromSeries(workspaceId, meeting.title, meeting.id),
+    getWorkspaceById(workspaceId),
+    meeting.projectId ? listRelationsForProject(meeting.projectId) : [],
   ]);
+  const projectsEnabled = workspace ? isFeatureEnabled(workspace, "projects") : false;
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
   const clientItems: ClientItem[] = open.map(toClientItem);
 
@@ -162,6 +170,23 @@ export default async function MeetingDetailPage({
               day: "numeric",
             }).format(new Date(it.meetingStart))}`,
           }))}
+          relatedCount={relations.length}
+          relatedProjects={
+            projectsEnabled ? (
+              <RelatedProjectsRail
+                projectId={meeting.projectId}
+                meetingId={meeting.id}
+                initial={relations.map((r) => ({
+                  id: r.id,
+                  kind: r.kind,
+                  direction: r.direction,
+                  otherId: r.otherId,
+                  otherName: r.otherName,
+                  otherStatus: r.otherStatus,
+                }))}
+              />
+            ) : null
+          }
           agendaCount={agenda.items.length}
           agenda={
             agenda.people.length > 0 ? (

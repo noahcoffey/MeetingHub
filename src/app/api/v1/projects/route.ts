@@ -18,9 +18,13 @@ export const GET = withV1({}, async (req, _ctx, principal) => {
   const disabled = checkFeature(ws.workspace, "projects");
   if (disabled) return disabled;
 
-  const includeArchived =
-    new URL(req.url).searchParams.get("includeArchived") === "true";
-  const items = await listProjects(ws.workspace.id, { includeArchived });
+  const params = new URL(req.url).searchParams;
+  const includeArchived = params.get("includeArchived") === "true";
+  const includeParked = params.get("includeParked") === "true";
+  const items = await listProjects(ws.workspace.id, {
+    includeArchived,
+    includeParked,
+  });
   return NextResponse.json({ items });
 });
 
