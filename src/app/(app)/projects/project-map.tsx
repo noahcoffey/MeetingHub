@@ -29,7 +29,11 @@ import {
   type ProjectEdgeData,
   type ProjectNodeData,
 } from "../project-graph";
-import { projectGraphState, todayLocal } from "../project-graph-state";
+import {
+  GRAPH_STATES,
+  projectGraphState,
+  todayLocal,
+} from "../project-graph-state";
 import {
   KIND_OPTION_LABEL,
   RELATION_KINDS,
@@ -371,6 +375,10 @@ function ProjectMapInner({
     void connect(c.source, c.target);
   }
 
+  const legendStates = nodes.some((n) => n.status === "archived")
+    ? [...GRAPH_STATES, "archived" as const]
+    : GRAPH_STATES;
+
   const selected = edges.find((e) => e.id === selectedEdge) ?? null;
   const parked = nodes.filter((n) => n.status === "parked");
   // The narrow-screen list: the centre's own edges.
@@ -602,7 +610,9 @@ function ProjectMapInner({
 
       {wide && (
         <div className="pmap-footnote">
-          <GraphLegend />
+          {/* An archived project keeps its own Map tab, so the legend has to
+              explain a colour the live surfaces never show. */}
+          <GraphLegend states={legendStates} />
           <p className="muted pmap-legend">
             Drag a node&apos;s crosshair onto another to connect them — or click
             the crosshair, then the other project. Click a line to retype or

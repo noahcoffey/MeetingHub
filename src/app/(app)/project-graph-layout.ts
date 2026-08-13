@@ -33,6 +33,14 @@ const CLUSTER_PAD_Y = 80;
 const SINGLE_PITCH_X = 150;
 const SINGLE_PITCH_Y = 138;
 
+// Every ordering below breaks ties on id after name. Project names are not
+// unique, so name alone leaves the order down to whatever sequence the rows and
+// edges arrived in — and the board would then shift between reloads for reasons
+// nobody can see.
+function byNameThenId(nameOf: (id: string) => string) {
+  return (a: string, b: string) => nameOf(a).localeCompare(nameOf(b)) || a.localeCompare(b);
+}
+
 // Neighbours in a stable order, so the same graph always draws the same way.
 export function adjacencyOf(
   nodes: LayoutNode[],
@@ -46,15 +54,9 @@ export function adjacencyOf(
     adj.get(e.fromId)?.add(e.toId);
     adj.get(e.toId)?.add(e.fromId);
   }
+  const order = byNameThenId((id) => byId.get(id)?.name ?? "");
   const out = new Map<string, string[]>();
-  for (const [id, set] of adj) {
-    out.set(
-      id,
-      [...set].sort((a, b) =>
-        (byId.get(a)?.name ?? "").localeCompare(byId.get(b)?.name ?? ""),
-      ),
-    );
-  }
+  for (const [id, set] of adj) out.set(id, [...set].sort(order));
   return out;
 }
 
@@ -80,11 +82,11 @@ export function componentsOf(
     groups.push(group);
   }
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  groups.sort(
-    (a, b) =>
-      b.length - a.length ||
-      (byId.get(a[0])?.name ?? "").localeCompare(byId.get(b[0])?.name ?? ""),
-  );
+  // Keyed on the component's own smallest id rather than whichever node the BFS
+  // happened to start from, so shelf order doesn't depend on row order.
+  const key = (ids: string[]) => [...ids].sort()[0];
+  const order = byNameThenId((id) => byId.get(id)?.name ?? "");
+  groups.sort((a, b) => b.length - a.length || order(key(a), key(b)));
   return groups;
 }
 
@@ -94,10 +96,9 @@ export function rootOf(
   adj: Map<string, string[]>,
   nameOf: (id: string) => string,
 ): string {
+  const order = byNameThenId(nameOf);
   return [...ids].sort(
-    (a, b) =>
-      (adj.get(b)?.length ?? 0) - (adj.get(a)?.length ?? 0) ||
-      nameOf(a).localeCompare(nameOf(b)),
+    (a, b) => (adj.get(b)?.length ?? 0) - (adj.get(a)?.length ?? 0) || order(a, b),
   )[0];
 }
 

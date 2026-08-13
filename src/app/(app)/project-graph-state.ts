@@ -8,16 +8,23 @@ export type ProjectGraphState =
   | "parked" // an idea, not a real initiative yet
   | "overdue" // deadline is in the past
   | "soon" // deadline within a week
-  | "active"; // in flight, nothing pressing
+  | "active" // in flight, nothing pressing
+  | "archived"; // finished or abandoned — see the note on GRAPH_STATES
 
 export const GRAPH_STATE_LABEL: Record<ProjectGraphState, string> = {
   parked: "Parked idea",
   overdue: "Overdue",
   soon: "Due soon",
   active: "Active",
+  archived: "Archived",
 };
 
-// The order the legend reads in: most urgent first, the shelf last.
+// The order a legend reads in: most urgent first, the shelf last. `archived` is
+// deliberately absent — the graphs are for live work and both queries filter it
+// out. The one way an archived project reaches a graph is by deep-linking to
+// its own hub Map tab, where `getProjectMap` keeps the centre whatever its
+// status so the page still renders; that surface adds the state to its legend
+// itself.
 export const GRAPH_STATES: ProjectGraphState[] = [
   "overdue",
   "soon",
@@ -52,6 +59,7 @@ export function projectGraphState(
   deadline: string | null,
   today: string,
 ): ProjectGraphState {
+  if (status === "archived") return "archived";
   if (status === "parked") return "parked";
   if (!deadline) return "active";
   const diff = daysBetween(today, deadline);

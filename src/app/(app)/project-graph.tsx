@@ -16,7 +16,11 @@ import {
   type OnConnectEnd,
 } from "@xyflow/react";
 import type { ProjectRelationKind } from "@/db/schema";
-import { GRAPH_STATES, GRAPH_STATE_LABEL, type ProjectGraphState } from "./project-graph-state";
+import {
+  GRAPH_STATES,
+  GRAPH_STATE_LABEL,
+  type ProjectGraphState,
+} from "./project-graph-state";
 import { relationLabel } from "./relation-kinds";
 
 // Both graph surfaces (/map and the project hub's Map tab) render through these
@@ -270,11 +274,18 @@ export function ConnectBanner({
 }
 
 // Legend for the bubble fills. Shown on both surfaces so the colours are never
-// something you have to work out.
-export function GraphLegend({ className }: { className?: string }) {
+// something you have to work out. `states` lets a surface add one the shipped
+// list leaves out — the hub Map tab does that for an archived centre.
+export function GraphLegend({
+  className,
+  states = GRAPH_STATES,
+}: {
+  className?: string;
+  states?: ProjectGraphState[];
+}) {
   return (
     <ul className={`pg-legend ${className ?? ""}`}>
-      {GRAPH_STATES.map((s) => (
+      {states.map((s) => (
         <li key={s} className="pg-legend-item">
           <span className={`pg-legend-dot state-${s}`} aria-hidden />
           {GRAPH_STATE_LABEL[s]}

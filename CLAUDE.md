@@ -166,7 +166,10 @@ Defined in `src/db/schema.ts`. Core tables:
   `(app)/project-graph.tsx` (the custom `project` node + `project` edge, the arrowhead `<defs>`, and
   the legend) and `(app)/project-graph-state.ts` (bubble colour: overdue / due soon ≤7d / active /
   parked — the same urgency buckets `/projects` uses, off the `deadline` the payload already
-  carries; the graph never contains archived projects). **React Flow renders and handles input; it
+  carries). Both queries filter archived projects out, with one exception: `getProjectMap` keeps the
+  **centre** whatever its status, so an archived project's own Map tab still renders. That is the
+  only way the `archived` state reaches a bubble, which is why it's absent from `GRAPH_STATES` and
+  the hub passes it to `GraphLegend` explicitly. **React Flow renders and handles input; it
   never decides where a node goes** — the app's own layouts below produce positions and pass them in
   as controlled state, `nodesDraggable={false}` (nothing persists a manual position), and no
   simulation runs. Nodes use `nodeOrigin={[0.5, 0.5]}` so a layout point *is* the bubble's centre.

@@ -55,49 +55,6 @@ export const STYLE_LAB_DEFAULTS: StyleLabValues = {
   squash: 0.88,
 };
 
-const STORAGE_KEY = "mh.map.bubble-style.v1";
-
-function sameAsDefaults(v: StyleLabValues): boolean {
-  return (Object.keys(STYLE_LAB_DEFAULTS) as (keyof StyleLabValues)[]).every(
-    (k) => v[k] === STYLE_LAB_DEFAULTS[k],
-  );
-}
-
-// Values plus a setter that persists. Reading happens in an effect rather than
-// a lazy initialiser because this component still server-renders, where there
-// is no localStorage — so the first paint is the shipped look and a stored
-// override lands immediately after.
-export function useBubbleStyle(): [
-  StyleLabValues,
-  (next: StyleLabValues) => void,
-] {
-  const [values, setValues] = useState<StyleLabValues>(STYLE_LAB_DEFAULTS);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      // Spread over the defaults so a stored blob written before a field
-      // existed still loads, with the new field at its shipped value.
-      setValues({ ...STYLE_LAB_DEFAULTS, ...JSON.parse(raw) });
-    } catch {
-      // Unparseable or unavailable storage is not worth breaking the map over.
-    }
-  }, []);
-
-  const update = useCallback((next: StyleLabValues) => {
-    setValues(next);
-    try {
-      if (sameAsDefaults(next)) window.localStorage.removeItem(STORAGE_KEY);
-      else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Private mode / quota — the change still applies for this session.
-    }
-  }, []);
-
-  return [values, update];
-}
-
 type Field = {
   key: keyof StyleLabValues;
   label: string;
@@ -120,6 +77,73 @@ const FIELDS: Field[] = [
   { key: "ringGap", label: "Ring spacing", min: 90, max: 420, step: 2, unit: "px" },
   { key: "squash", label: "Ring squash", min: 0.3, max: 1.2, step: 0.01, unit: "" },
 ];
+
+const STORAGE_KEY = "mh.map.bubble-style.v1";
+
+const RANGE = new Map(FIELDS.map((f) => [f.key, { min: f.min, max: f.max }]));
+
+// Every number entering state goes through here. A cleared number input yields
+// `Number("") === 0` and a partial one like "-" yields NaN; unchecked, `size: 0`
+// collapses every bubble and `ringGap: NaN` produces non-finite positions, which
+// makes nodes vanish from the canvas entirely.
+function clampValue(key: keyof StyleLabValues, n: number): number {
+  if (!Number.isFinite(n)) return STYLE_LAB_DEFAULTS[key];
+  const range = RANGE.get(key);
+  return range ? Math.min(range.max, Math.max(range.min, n)) : n;
+}
+
+// Stored blobs are untrusted: hand-edited, written by an older build, or simply
+// corrupt. Anything that isn't a finite number falls back to the shipped value,
+// which also covers a field that didn't exist when the blob was written.
+function sanitise(raw: unknown): StyleLabValues {
+  const next = { ...STYLE_LAB_DEFAULTS };
+  if (typeof raw !== "object" || raw === null) return next;
+  const source = raw as Record<string, unknown>;
+  for (const key of Object.keys(STYLE_LAB_DEFAULTS) as (keyof StyleLabValues)[]) {
+    const candidate = source[key];
+    if (typeof candidate === "number") next[key] = clampValue(key, candidate);
+  }
+  return next;
+}
+
+function sameAsDefaults(v: StyleLabValues): boolean {
+  return (Object.keys(STYLE_LAB_DEFAULTS) as (keyof StyleLabValues)[]).every(
+    (k) => v[k] === STYLE_LAB_DEFAULTS[k],
+  );
+}
+
+// Values plus a setter that persists. Reading happens in an effect rather than
+// a lazy initialiser because this component still server-renders, where there
+// is no localStorage — so the first paint is the shipped look and a stored
+// override lands immediately after.
+export function useBubbleStyle(): [
+  StyleLabValues,
+  (next: StyleLabValues) => void,
+] {
+  const [values, setValues] = useState<StyleLabValues>(STYLE_LAB_DEFAULTS);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      setValues(sanitise(JSON.parse(raw) as unknown));
+    } catch {
+      // Unparseable or unavailable storage is not worth breaking the map over.
+    }
+  }, []);
+
+  const update = useCallback((next: StyleLabValues) => {
+    setValues(next);
+    try {
+      if (sameAsDefaults(next)) window.localStorage.removeItem(STORAGE_KEY);
+      else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Private mode / quota — the change still applies for this session.
+    }
+  }, []);
+
+  return [values, update];
+}
 
 // The custom properties the palette drives, in the same order as the CSS.
 export function cssVarsFor(v: StyleLabValues): Record<string, string> {
@@ -176,7 +200,7 @@ export function MapStyleLab({
   }, [values, stageRef]);
 
   const set = (key: keyof StyleLabValues, n: number) =>
-    onChange({ ...values, [key]: n });
+    onChange({ ...values, [key]: clampValue(key, n) });
 
   if (!open) {
     return (
@@ -212,10 +236,21 @@ export function MapStyleLab({
 
       <div className="stylelab-fields">
         {FIELDS.map((f) => (
-          <label key={f.key} className="stylelab-row">
-            <span className="stylelab-label">{f.label}</span>
+          // A row holds two controls for one setting, and a <label> can name
+          // only one — so the row is a named group and each input carries its
+          // own label.
+          <div
+            key={f.key}
+            className="stylelab-row"
+            role="group"
+            aria-label={`${f.label}${f.unit ? ` (${f.unit})` : ""}`}
+          >
+            <span className="stylelab-label" aria-hidden="true">
+              {f.label}
+            </span>
             <input
               type="range"
+              aria-label={`${f.label} slider`}
               min={f.min}
               max={f.max}
               step={f.step}
@@ -224,6 +259,7 @@ export function MapStyleLab({
             />
             <input
               type="number"
+              aria-label={`${f.label} value`}
               className="stylelab-num"
               min={f.min}
               max={f.max}
@@ -231,8 +267,10 @@ export function MapStyleLab({
               value={values[f.key]}
               onChange={(e) => set(f.key, Number(e.target.value))}
             />
-            <span className="stylelab-unit">{f.unit}</span>
-          </label>
+            <span className="stylelab-unit" aria-hidden="true">
+              {f.unit}
+            </span>
+          </div>
         ))}
       </div>
 

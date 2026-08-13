@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import postgres from "postgres";
 import { E2E_DATABASE_URL, E2E_PASSWORD } from "./constants";
 
@@ -42,6 +42,39 @@ test.beforeAll(async () => {
     await sql.end();
   }
 });
+
+// The map animates: a relayout tweens (~380ms) and is then followed by a
+// fitView that animates again. Polling for a bounding box that stops moving
+// keeps the position assertions off an in-flight frame and independent of those
+// durations.
+//
+// It insists on SUSTAINED stillness rather than two matching reads, because
+// there is a gap between the click and the first animated frame — two quick
+// samples land inside it and report "settled" before anything has moved.
+const STABLE_SAMPLES = 4;
+const SAMPLE_MS = 150;
+
+async function settled(locator: Locator) {
+  let previous = await locator.boundingBox();
+  let run = 0;
+  await expect
+    .poll(
+      async () => {
+        const current = await locator.boundingBox();
+        const same =
+          !!previous &&
+          !!current &&
+          Math.abs(previous.x - current.x) < 0.5 &&
+          Math.abs(previous.y - current.y) < 0.5;
+        run = same ? run + 1 : 0;
+        previous = current;
+        return run;
+      },
+      { timeout: 15_000, intervals: [SAMPLE_MS] },
+    )
+    .toBeGreaterThanOrEqual(STABLE_SAMPLES);
+  return previous!;
+}
 
 // Hub tab labels ("Map", "Meetings") are also main-nav labels, so tab clicks
 // must be scoped to the tab bar or they land on the sidebar link instead.
@@ -133,20 +166,15 @@ test("capture a tangent from a meeting, then find it on the map", async ({
     await expect(page.locator(".pg-node.centre")).toContainText(NEIGHBOUR);
     await page.getByRole("button", { name: "‹ Everything" }).click();
     await expect(page.locator(".mapx.is-overview")).toBeVisible();
-    // Returning to the overview is a real relayout: tween, then a fitView that
-    // starts after it and animates for another ~320ms. Let the whole sequence
-    // finish before measuring, or the animation is what gets measured.
-    await page.waitForTimeout(1400);
 
     // Selecting must not shift the board. The panel narrows the canvas, so the
     // layout deliberately measures the body instead — nothing moves under the
     // pointer when you inspect something.
     const probe = page.locator(".pg-node", { hasText: BLOCKER });
-    const before = (await probe.boundingBox())!;
+    const before = await settled(probe);
     await page.locator(".pg-node", { hasText: HUB }).click();
     await expect(page.locator(".mapx-panel-title")).toHaveText(HUB);
-    await page.waitForTimeout(600);
-    const after = (await probe.boundingBox())!;
+    const after = await settled(probe);
     expect(Math.abs(before.x - after.x)).toBeLessThan(2);
     expect(Math.abs(before.y - after.y)).toBeLessThan(2);
 

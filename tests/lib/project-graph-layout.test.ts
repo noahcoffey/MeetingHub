@@ -103,6 +103,47 @@ describe("project graph layout", () => {
     }
   });
 
+  // Project names are not unique, so name-only ordering would leave the board
+  // at the mercy of whatever order rows and edges arrived in.
+  it("is deterministic when two projects share a name", () => {
+    const dupes: LayoutNode[] = [
+      { id: "n1", name: "hub" },
+      { id: "n2", name: "same" },
+      { id: "n3", name: "same" },
+      { id: "n4", name: "same" },
+    ];
+    const dupeEdges = [edge("n1", "n2"), edge("n1", "n3"), edge("n1", "n4")];
+    const a = layoutOverview(dupes, dupeEdges, SIZE);
+    // Reversing both inputs changes only arrival order, never the graph.
+    const b = layoutOverview([...dupes].reverse(), [...dupeEdges].reverse(), SIZE);
+    for (const n of dupes) {
+      expect(a.get(n.id)!.x).toBeCloseTo(b.get(n.id)!.x, 6);
+      expect(a.get(n.id)!.y).toBeCloseTo(b.get(n.id)!.y, 6);
+    }
+    // And the same-named siblings still land in distinct places.
+    const seen = ["n2", "n3", "n4"].map((id) => a.get(id)!);
+    expect(dist(seen[0], seen[1])).toBeGreaterThan(40);
+    expect(dist(seen[1], seen[2])).toBeGreaterThan(40);
+    expect(dist(seen[0], seen[2])).toBeGreaterThan(40);
+  });
+
+  it("picks the same root when the best-connected projects tie on name", () => {
+    const tied: LayoutNode[] = [
+      { id: "b", name: "tie" },
+      { id: "a", name: "tie" },
+      { id: "c", name: "leaf" },
+      { id: "d", name: "leaf" },
+    ];
+    const tiedEdges = [edge("a", "c"), edge("b", "d"), edge("a", "b")];
+    const adj = adjacencyOf(tied, tiedEdges);
+    const [main] = componentsOf(tied, adj);
+    const first = rootOf(main, adj, (id) => tied.find((n) => n.id === id)!.name);
+    const reversedAdj = adjacencyOf([...tied].reverse(), [...tiedEdges].reverse());
+    const [mainReversed] = componentsOf([...tied].reverse(), reversedAdj);
+    const second = rootOf(mainReversed, reversedAdj, (id) => tied.find((n) => n.id === id)!.name);
+    expect(first).toBe(second);
+  });
+
   it("roots a component on its best-connected project", () => {
     const adj = adjacencyOf(NODES, EDGES);
     const [main] = componentsOf(NODES, adj);

@@ -7736,3 +7736,13 @@ html {
 .stylelab-copy {
   align-self: flex-start;
 }
+
+/* Only reachable by deep-linking an archived project's own Map tab; the live
+   graphs filter archived out entirely. */
+.pg-node.state-archived,
+.pg-legend-dot.state-archived {
+  --pg-state: var(--faint);
+}
+.pg-node.state-archived {
+  opacity: 0.75;
+}
