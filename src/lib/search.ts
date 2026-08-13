@@ -17,6 +17,9 @@ export type ActionHit = {
 export type ProjectHit = {
   id: string;
   name: string;
+  // Parked ideas are searchable (that's half the point of writing them down),
+  // but the palette labels them so they aren't mistaken for real projects.
+  parked: boolean;
 };
 export type NoteHit = {
   id: string;
@@ -136,9 +139,9 @@ export async function search(
 
   const projectRows = projectsEnabled
     ? ((await db.execute(sql`
-    SELECT id, name
+    SELECT id, name, status
     FROM projects
-    WHERE workspace_id = ${workspaceId} AND status = 'active' AND (
+    WHERE workspace_id = ${workspaceId} AND status IN ('active', 'parked') AND (
       ${PROJECT_DOC} @@ to_tsquery('english', ${tsq})
       OR ${q}::text <% name
     )
@@ -147,7 +150,7 @@ export async function search(
       word_similarity(${q}::text, name)
     ) DESC
     LIMIT 8
-  `)) as unknown as Array<{ id: string; name: string }>)
+  `)) as unknown as Array<{ id: string; name: string; status: string }>)
     : [];
 
   const noteRows = notesEnabled
@@ -177,7 +180,11 @@ export async function search(
       meetingId: r.meeting_id,
       meetingTitle: r.meeting_title,
     })),
-    projects: projectRows.map((r) => ({ id: r.id, name: r.name })),
+    projects: projectRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      parked: r.status === "parked",
+    })),
     notes: noteRows.map((r) => ({ id: r.id, title: r.title })),
   };
 }
