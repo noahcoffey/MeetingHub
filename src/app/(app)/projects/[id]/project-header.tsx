@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "../../confirm-dialog";
+import type { ProjectStatus } from "@/db/schema";
 
 export type ProjectHeaderData = {
   id: string;
   name: string;
   description: string;
   deadline: string | null; // YYYY-MM-DD
-  status: "active" | "archived";
+  status: ProjectStatus;
 };
 
 function todayIso(): string {
@@ -144,13 +145,18 @@ export function ProjectHeader({
         <h1 className="page-title">
           {project.name}
           {project.status === "archived" && <span className="badge hub-archived-badge">Archived</span>}
+          {project.status === "parked" && <span className="badge hub-parked-badge">Parked</span>}
         </h1>
         <div className="detail-title-actions">
           <button type="button" className="row-action" onClick={() => setEditing(true)}>
             Edit
           </button>
           <button type="button" className="row-action" onClick={toggleArchive}>
-            {project.status === "active" ? "Archive" : "Reactivate"}
+            {project.status === "active"
+              ? "Archive"
+              : project.status === "parked"
+                ? "Promote"
+                : "Reactivate"}
           </button>
           <button
             type="button"

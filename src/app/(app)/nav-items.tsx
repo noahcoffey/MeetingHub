@@ -59,6 +59,21 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/map",
+    label: "Map",
+    // Rides the projects toggle — it's a view of projects and nothing else.
+    feature: "projects",
+    match: (p: string) => p.startsWith("/map"),
+    icon: (
+      <>
+        <circle cx="10" cy="5" r="2" strokeWidth="1.5" />
+        <circle cx="5" cy="14.5" r="2" strokeWidth="1.5" />
+        <circle cx="15" cy="14.5" r="2" strokeWidth="1.5" />
+        <path d="M8.7 6.8L6.3 12.7M11.3 6.8l2.4 5.9M7 14.5h6" strokeWidth="1.5" strokeLinecap="round" />
+      </>
+    ),
+  },
+  {
     href: "/people",
     label: "People",
     feature: "people",
