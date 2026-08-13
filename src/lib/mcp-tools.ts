@@ -292,16 +292,18 @@ export function registerTools(server: McpServer): void {
   // ---- projects ----
   tool(
     "list_projects",
-    "List projects in a workspace (active only unless includeArchived).",
+    "List projects in a workspace (active only unless includeArchived/includeParked). Parked projects are ideas captured in a meeting that aren't real initiatives yet.",
     {
       ...workspaceParam,
       includeArchived: z.boolean().optional(),
+      includeParked: z.boolean().optional(),
     },
     (args, bearer) =>
       callV1(v1Projects.GET, bearer, {
         query: {
           workspace: args.workspace,
           includeArchived: args.includeArchived ? "true" : undefined,
+          includeParked: args.includeParked ? "true" : undefined,
         },
       }),
   );
@@ -329,13 +331,13 @@ export function registerTools(server: McpServer): void {
 
   tool(
     "update_project",
-    "Partially update a project. status archived/active archives/restores it. Requires write scope.",
+    "Partially update a project. status archived/active archives/restores it; parked/active parks or promotes an idea. Requires write scope.",
     {
       ...idParam,
       name: z.string().min(1).optional(),
       description: z.string().nullable().optional(),
       deadline: z.string().nullable().optional().describe(DATE_DESC),
-      status: z.enum(["active", "archived"]).optional(),
+      status: z.enum(["active", "archived", "parked"]).optional(),
     },
     ({ id, ...body }, bearer) =>
       callV1(v1Project.PATCH, bearer, {

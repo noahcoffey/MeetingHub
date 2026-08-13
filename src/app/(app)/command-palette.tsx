@@ -10,7 +10,7 @@ type ActionRes = {
   meetingId: string | null;
   subtitle: string;
 };
-type ProjectRes = { id: string; name: string };
+type ProjectRes = { id: string; name: string; parked?: boolean };
 type NoteRes = { id: string; title: string };
 
 const OPEN_EVENT = "mh:open-search";
@@ -292,6 +292,7 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
                     </span>
                     <span className="cmdk-text">
                       <span className="cmdk-title">{p.name}</span>
+                      {p.parked && <span className="cmdk-sub">Parked idea</span>}
                     </span>
                   </button>
                 );
