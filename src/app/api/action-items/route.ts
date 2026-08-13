@@ -6,6 +6,7 @@ import {
   MilestoneAssignmentError,
 } from "@/lib/action-items";
 import { listActionItemsForProject } from "@/lib/projects";
+import { guardProject } from "../_lib/project-guard";
 import { isRecurrenceUnit } from "@/lib/recurrence";
 import { getActiveWorkspaceId } from "@/lib/workspace-context";
 
@@ -21,6 +22,13 @@ export const GET = auth(async (req) => {
   const meetingId = params.get("meetingId");
   const projectId = params.get("projectId");
   if (projectId) {
+    // Same gate as every other project-scoped route: the project must exist,
+    // live in the active workspace, and have the feature enabled. Without it
+    // this read would ignore both the workspace partition and the toggle.
+    const denied = await guardProject(projectId, {
+      requireActiveWorkspace: true,
+    });
+    if (denied) return denied;
     // The map panel wants only what's still outstanding.
     const all = await listActionItemsForProject(projectId);
     return NextResponse.json({ items: all.filter((i) => i.status === "open") });

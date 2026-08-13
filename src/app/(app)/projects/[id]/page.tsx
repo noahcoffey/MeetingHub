@@ -144,11 +144,15 @@ export default async function ProjectDetailPage({
   const workspace = await getWorkspaceById(project.workspaceId);
   const filesEnabled =
     workspace !== undefined && isFeatureEnabled(workspace, "files");
+  // Detail pages stay deep-linkable with the feature off, but a tab whose whole
+  // subject is disabled shouldn't be offered — same treatment as Files.
+  const projectsEnabled =
+    workspace !== undefined && isFeatureEnabled(workspace, "projects");
   // Links live inside the unified Files & Links tab; the standalone Links tab
   // only exists as the fallback when the files feature is off.
-  const visibleTabs = filesEnabled
-    ? TABS.filter((t) => t !== "links")
-    : TABS.filter((t) => t !== "files");
+  const visibleTabs = (
+    filesEnabled ? TABS.filter((t) => t !== "links") : TABS.filter((t) => t !== "files")
+  ).filter((t) => t !== "map" || projectsEnabled);
 
   // Old ?tab=links deep-links land on the merged tab.
   const requestedTab = tabParam === "links" && filesEnabled ? "files" : tabParam;
@@ -639,7 +643,7 @@ export default async function ProjectDetailPage({
         </section>
       )}
 
-      {tab === "map" && projectMap && (
+      {tab === "map" && projectsEnabled && projectMap && (
         <section className="hub-card">
           <div className="hub-card-head">
             <h2>Map</h2>

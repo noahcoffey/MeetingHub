@@ -12,8 +12,20 @@ export function ParkedProjects({ initial }: { initial: Row[] }) {
   const [rows, setRows] = useState(initial);
   const [confirmDelete, setConfirmDelete] = useState<Row | null>(null);
 
+  // Put back just the one row, in place. Restoring a whole snapshot would undo
+  // any other row a concurrent request had already removed successfully.
+  function restore(row: Row, at: number) {
+    setRows((r) =>
+      r.some((x) => x.id === row.id)
+        ? r
+        : [...r.slice(0, at), row, ...r.slice(at)],
+    );
+  }
+
   async function setStatus(id: string, status: "active" | "archived") {
-    const prev = rows;
+    const at = rows.findIndex((x) => x.id === id);
+    const row = rows[at];
+    if (!row) return;
     setRows((r) => r.filter((x) => x.id !== id));
     try {
       const res = await fetch(`/api/projects/${id}`, {
@@ -23,18 +35,20 @@ export function ParkedProjects({ initial }: { initial: Row[] }) {
       });
       if (!res.ok) throw new Error();
     } catch {
-      setRows(prev);
+      restore(row, at);
     }
   }
 
   async function remove(id: string) {
-    const prev = rows;
+    const at = rows.findIndex((x) => x.id === id);
+    const row = rows[at];
+    if (!row) return;
     setRows((r) => r.filter((x) => x.id !== id));
     try {
       const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
     } catch {
-      setRows(prev);
+      restore(row, at);
     }
   }
 

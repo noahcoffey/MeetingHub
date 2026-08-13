@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { ProjectRelationKind } from "@/db/schema";
 import {
@@ -40,6 +40,9 @@ export function RelatedProjectsRail({
   const [searching, setSearching] = useState(false);
   const [kind, setKind] = useState<ProjectRelationKind>("related");
   const [busy, setBusy] = useState(false);
+  // `busy` drives the disabled attribute, but two fast Enters both read the
+  // same render's value — the ref is what actually closes the window.
+  const submittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -79,8 +82,9 @@ export function RelatedProjectsRail({
   }
 
   async function link(other: SearchProject) {
-    if (!projectId) return;
+    if (!projectId || submittingRef.current) return;
     if (relations.some((r) => r.otherId === other.id)) return;
+    submittingRef.current = true;
     setBusy(true);
     try {
       const res = await fetch("/api/project-relations", {
@@ -117,12 +121,14 @@ export function RelatedProjectsRail({
     } catch {
       fail("Could not connect those projects.");
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   }
 
   async function capture(name: string) {
-    if (!projectId) return;
+    if (!projectId || submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     try {
       const res = await fetch("/api/project-relations/capture", {
@@ -160,6 +166,7 @@ export function RelatedProjectsRail({
     } catch {
       fail("Could not save that.");
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   }

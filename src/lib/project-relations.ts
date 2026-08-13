@@ -12,6 +12,10 @@ import {
   type ProjectStatus,
 } from "@/db/schema";
 
+// `db` or a transaction handle — the two share the query-builder surface these
+// functions use, so a helper can run inside or outside a transaction.
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 // The two "flow" kinds. Only these are cycle-constrained: a mutual `related`
 // pair is meaningful, and `spun_from` is historical record, not a constraint.
 const FLOW_KINDS: ProjectRelationKind[] = ["blocks", "depends_on"];
@@ -31,7 +35,10 @@ function flowArrow(e: {
 // Edges have no workspace column — they inherit scope from their endpoints.
 // Both endpoints are same-workspace (addRelation rejects mixed edges), so
 // joining on the fromId side and filtering that is sufficient.
-export async function listRelationEdges(workspaceId: string): Promise<
+export async function listRelationEdges(
+  workspaceId: string,
+  executor: Executor = db,
+): Promise<
   {
     id: string;
     fromId: string;
@@ -39,7 +46,7 @@ export async function listRelationEdges(workspaceId: string): Promise<
     kind: ProjectRelationKind;
   }[]
 > {
-  return db
+  return executor
     .select({
       id: projectRelations.id,
       fromId: projectRelations.fromId,
@@ -158,18 +165,38 @@ async function flowArrowsForWorkspace(
     .filter((a): a is { from: string; to: string } => a !== null);
 }
 
-export async function addRelation(input: {
-  fromId: string;
-  toId: string;
-  kind?: ProjectRelationKind;
-  note?: string | null;
-  createdInMeetingId?: string | null;
-}): Promise<AddRelationResult> {
+// Postgres unique-violation. The pair index (migration 0038) is the only thing
+// standing between two racing requests and a double edge, so a violation means
+// "someone else just made this connection", not a server fault.
+// Drizzle wraps driver errors, so the code can be one level down in `cause`.
+function isUniqueViolation(e: unknown): boolean {
+  const code = (x: unknown) =>
+    typeof x === "object" && x !== null
+      ? (x as { code?: unknown }).code
+      : undefined;
+  return (
+    code(e) === "23505" ||
+    code((e as { cause?: unknown } | null)?.cause) === "23505"
+  );
+}
+
+export async function addRelation(
+  input: {
+    fromId: string;
+    toId: string;
+    kind?: ProjectRelationKind;
+    note?: string | null;
+    createdInMeetingId?: string | null;
+  },
+  // Lets captureRelatedProject run the project insert and this edge in one
+  // transaction instead of compensating afterwards.
+  executor: Executor = db,
+): Promise<AddRelationResult> {
   const { fromId, toId } = input;
   const kind = input.kind ?? "related";
   if (fromId === toId) return { ok: false, reason: "self" };
 
-  const found = await db
+  const found = await executor
     .select({ id: projects.id, workspaceId: projects.workspaceId })
     .from(projects)
     .where(inArray(projects.id, [fromId, toId]));
@@ -179,7 +206,7 @@ export async function addRelation(input: {
   }
   const workspaceId = found[0].workspaceId;
 
-  const edges = await listRelationEdges(workspaceId);
+  const edges = await listRelationEdges(workspaceId, executor);
   // One line per pair, whichever way it was drawn — flipping direction or
   // changing the kind goes through updateRelation, so the map never stacks two
   // edges between the same two bubbles.
@@ -204,17 +231,23 @@ export async function addRelation(input: {
     }
   }
 
-  const [relation] = await db
-    .insert(projectRelations)
-    .values({
-      fromId,
-      toId,
-      kind,
-      note: input.note?.trim() ? input.note.trim() : null,
-      createdInMeetingId: input.createdInMeetingId ?? null,
-    })
-    .returning();
-  return { ok: true, relation };
+  try {
+    const [relation] = await executor
+      .insert(projectRelations)
+      .values({
+        fromId,
+        toId,
+        kind,
+        note: input.note?.trim() ? input.note.trim() : null,
+        createdInMeetingId: input.createdInMeetingId ?? null,
+      })
+      .returning();
+    return { ok: true, relation };
+  } catch (e) {
+    // Lost a race against an identical (or mirrored) insert.
+    if (isUniqueViolation(e)) return { ok: false, reason: "duplicate" };
+    throw e;
+  }
 }
 
 export type UpdateRelationResult =
@@ -262,6 +295,17 @@ export async function updateRelation(
     .where(eq(projectRelations.id, id))
     .returning();
   return { ok: true, relation };
+}
+
+export async function getRelation(
+  id: string,
+): Promise<ProjectRelation | undefined> {
+  const [row] = await db
+    .select()
+    .from(projectRelations)
+    .where(eq(projectRelations.id, id))
+    .limit(1);
+  return row;
 }
 
 export async function removeRelation(id: string): Promise<void> {
@@ -329,16 +373,38 @@ export async function getProjectMap(
     .leftJoin(meetings, eq(projectRelations.createdInMeetingId, meetings.id))
     .where(eq(projects.workspaceId, centre.workspaceId));
 
+  // Archived projects are excluded from the graph, matching getWorkspaceMap —
+  // the map is for live work. The centre itself is always kept so a deep link
+  // into an archived project's map still renders.
+  const live = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, centre.workspaceId),
+        inArray(projects.status, ["active", "parked"] as ProjectStatus[]),
+      ),
+    );
+  const liveIds = new Set(live.map((r) => r.id));
+  liveIds.add(centre.id);
+
+  // Adjacency built once: the BFS previously rescanned every edge for every
+  // frontier node, which is O(nodes x edges) on a busy workspace.
+  const adjacency = new Map<string, string[]>();
+  for (const e of all) {
+    if (!liveIds.has(e.fromId) || !liveIds.has(e.toId)) continue;
+    adjacency.set(e.fromId, [...(adjacency.get(e.fromId) ?? []), e.toId]);
+    adjacency.set(e.toId, [...(adjacency.get(e.toId) ?? []), e.fromId]);
+  }
+
   const hops = new Map<string, number>([[centre.id, 0]]);
   let frontier = [centre.id];
   let truncated = false;
   for (let h = 1; h <= depth; h++) {
     const next: string[] = [];
     for (const id of frontier) {
-      for (const e of all) {
-        const other =
-          e.fromId === id ? e.toId : e.toId === id ? e.fromId : null;
-        if (!other || hops.has(other)) continue;
+      for (const other of adjacency.get(id) ?? []) {
+        if (hops.has(other)) continue;
         if (hops.size >= MAX_MAP_NODES) {
           truncated = true;
           continue;
@@ -494,26 +560,52 @@ export async function captureRelatedProject(input: {
     if (!m) return { ok: false, reason: "bad-meeting" };
   }
 
-  const [created] = await db
-    .insert(projects)
-    .values({
-      workspaceId: from.workspaceId,
-      name: input.name,
-      status: "parked",
-    })
-    .returning({ id: projects.id, name: projects.name });
+  // One transaction, so a failed edge can't strand a disconnected parked
+  // project. (A compensating delete would itself be able to fail.) The
+  // discriminated union is carried out through a sentinel rather than a throw
+  // so callers keep getting a reason instead of an exception.
+  let failure: RelationFailure | null = null;
+  let created: {
+    project: { id: string; name: string };
+    relation: ProjectRelation;
+  } | null = null;
+  try {
+    created = await db.transaction(async (tx) => {
+      const [project] = await tx
+      .insert(projects)
+        .values({
+          workspaceId: from.workspaceId,
+          name: input.name,
+          status: "parked",
+        })
+        .returning({ id: projects.id, name: projects.name });
 
-  const result = await addRelation({
-    fromId: from.id,
-    toId: created.id,
-    kind: input.kind ?? "related",
-    note: input.note ?? null,
-    createdInMeetingId: input.meetingId ?? null,
-  });
-  if (!result.ok) {
-    // Don't leave a disconnected parked project behind.
-    await db.delete(projects).where(eq(projects.id, created.id));
-    return { ok: false, reason: result.reason };
+      const result = await addRelation(
+        {
+          fromId: from.id,
+          toId: project.id,
+          kind: input.kind ?? "related",
+          note: input.note ?? null,
+          createdInMeetingId: input.meetingId ?? null,
+        },
+        tx,
+      );
+      if (!result.ok) {
+        failure = result.reason;
+        // Throws; the catch below turns it back into a reason.
+        tx.rollback();
+      }
+      return {
+        project,
+        relation: (result as { relation: ProjectRelation }).relation,
+      };
+    });
+  } catch (e) {
+    // Only swallow our own deliberate rollback — anything else is a real fault.
+    if (failure === null) throw e;
   }
-  return { ok: true, project: created, relation: result.relation };
+
+  if (failure !== null) return { ok: false, reason: failure };
+  if (!created) return { ok: false, reason: "not-found" };
+  return { ok: true, project: created.project, relation: created.relation };
 }

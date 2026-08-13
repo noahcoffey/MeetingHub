@@ -487,9 +487,23 @@ export function ProjectMap({
                   selectedEdge === e.id ? "on" : ""
                 }`}
                 markerEnd={flow ? "url(#pmap-arrow)" : undefined}
+                // An SVG <line> takes no focus of its own, so without these the
+                // edge editor is mouse-only.
+                role="button"
+                tabIndex={0}
+                aria-label={`${nodeById.get(e.fromId)?.name} ${relationLabel(
+                  e.kind,
+                  "out",
+                )} ${nodeById.get(e.toId)?.name} — edit connection`}
                 onClick={() =>
                   setSelectedEdge((s) => (s === e.id ? null : e.id))
                 }
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    setSelectedEdge((s) => (s === e.id ? null : e.id));
+                  }
+                }}
               />
             );
           })}

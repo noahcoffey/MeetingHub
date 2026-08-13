@@ -13,6 +13,8 @@ import {
 } from "@/lib/project-relations";
 import { createProject, listProjects, updateProject } from "@/lib/projects";
 import { createMeeting } from "@/lib/meetings";
+import { db } from "@/db";
+import { projectRelations } from "@/db/schema";
 import { makeWorkspace, resetDb } from "../helpers";
 
 let ws: string;
@@ -336,5 +338,63 @@ describe("getWorkspaceMap", () => {
     await createProject(ws, { name: "Idea", status: "parked" });
     const map = await getWorkspaceMap(ws);
     expect(map.nodes.map((n) => n.name)).toContain("Idea");
+  });
+});
+
+describe("database-level pair guards (migration 0038)", () => {
+  it("rejects a mirrored edge even when the lib checks are bypassed", async () => {
+    const a = await project(ws, "A");
+    const b = await project(ws, "B");
+    const created = await addRelation({ fromId: a, toId: b });
+    expect(created.ok).toBe(true);
+    // Straight to the table: two racing requests can both clear addRelation's
+    // in-memory dedupe, so the unordered-pair index is the real guarantee.
+    await expect(
+      db.insert(projectRelations).values({ fromId: b, toId: a }),
+    ).rejects.toMatchObject({ cause: { code: "23505" } });
+  });
+
+  it("rejects a self-edge at the database boundary", async () => {
+    const a = await project(ws, "A");
+    await expect(
+      db.insert(projectRelations).values({ fromId: a, toId: a }),
+    ).rejects.toMatchObject({ cause: { code: "23514" } });
+  });
+
+  it("reports a lost insert race as a duplicate, not a crash", async () => {
+    const a = await project(ws, "A");
+    const b = await project(ws, "B");
+    // Both calls read the same (empty) edge list before either inserts — the
+    // exact window the in-memory dedupe can't close. One wins; the other must
+    // come back with a reason rather than throwing a 500 at the route.
+    const [first, second] = await Promise.all([
+      addRelation({ fromId: a, toId: b }),
+      addRelation({ fromId: b, toId: a }),
+    ]);
+    const results = [first, second];
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toEqual([
+      { ok: false, reason: "duplicate" },
+    ]);
+    expect(await listRelationEdges(ws)).toHaveLength(1);
+  });
+});
+
+describe("captureRelatedProject is atomic", () => {
+  it("leaves no parked project behind when the edge fails", async () => {
+    const a = await project(ws, "A");
+    const b = await project(ws, "B");
+    await addRelation({ fromId: a, toId: b });
+    const before = (await listProjects(ws, { includeParked: true })).length;
+    // Name the new idea, but force the edge to fail by reusing a connected
+    // pair is impossible here (the new project is fresh), so drive the failure
+    // through a bad meeting instead — the project insert must roll back.
+    const res = await captureRelatedProject({
+      fromProjectId: a,
+      name: "Should not survive",
+      meetingId: randomUUID(),
+    });
+    expect(res).toEqual({ ok: false, reason: "bad-meeting" });
+    expect((await listProjects(ws, { includeParked: true })).length).toBe(before);
   });
 });

@@ -150,7 +150,14 @@ Defined in `src/db/schema.ts`. Core tables:
   from the endpoints (`lib/project-relations.ts` rejects self/duplicate/cross-workspace edges, and
   **one edge per pair regardless of direction** — flipping or retyping goes through `updateRelation`).
   Cycle checks apply ONLY to the two *flow* kinds, normalized so `blocks(A,B)` and `depends_on(B,A)`
-  are the same arrow; `related`/`spun_from` are unconstrained. Surfaces: the meeting rail's
+  are the same arrow; `related`/`spun_from` are unconstrained. The lib checks can be raced, so
+  migration **0038** (hand-written, like 0004's pg_trgm — not mirrored in `schema.ts`) adds a
+  no-self-edge CHECK and a unique index on `(LEAST(from_id,to_id), GREATEST(from_id,to_id))`;
+  `addRelation` maps a `23505` back to `duplicate` (Drizzle wraps driver errors, so the code sits on
+  `cause`). `captureRelatedProject` runs the project insert and the edge in **one transaction**.
+  Session routes taking a `projectId` authorize through the shared `api/_lib/project-guard.ts`
+  (exists → workspace → `projects` feature); relation PATCH/DELETE resolve the edge first and guard
+  via its `fromId`, since an edge id alone carries no scope. Surfaces: the meeting rail's
   **Related projects** section (type-ahead to link an existing project, or type a new name to
   create a parked project + edge in one request via `POST /api/project-relations/capture`) and the
   project hub's **Map** tab (`projects/project-map.tsx` — a small static radial preview, links out

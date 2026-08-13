@@ -456,8 +456,15 @@ export function MapWorkspace({
   // frame ahead — that's most of what makes re-centring feel native.
   const [points, setPoints] = useState<Map<string, Point>>(targets);
   const pointsRef = useRef(points);
-  pointsRef.current = points;
   const frameRef = useRef<number | null>(null);
+
+  // Mirrored in an effect, not during render: React can discard or replay a
+  // render, and a ref written there could hold positions that never committed —
+  // the next tween would then interpolate from somewhere never drawn. Declared
+  // before the tween effect so the tween always starts from what's on screen.
+  useEffect(() => {
+    pointsRef.current = points;
+  }, [points]);
 
   useEffect(() => {
     const from = new Map(pointsRef.current);
@@ -797,8 +804,22 @@ export function MapWorkspace({
                     selectedEdgeId === e.id ? "on" : ""
                   }`}
                   markerEnd={flow ? "url(#mapx-arrow)" : undefined}
+                  // An SVG <line> isn't focusable on its own, so the edge
+                  // editor would be mouse-only without this.
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${nodeById.get(e.fromId)?.name} ${relationLabel(
+                    e.kind,
+                    "out",
+                  )} ${nodeById.get(e.toId)?.name} — edit connection`}
                   onClick={() => {
                     setSelectedEdgeId((s) => (s === e.id ? null : e.id));
+                  }}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault();
+                      setSelectedEdgeId((s) => (s === e.id ? null : e.id));
+                    }
                   }}
                 />
               );
@@ -1023,6 +1044,9 @@ function DetailPanel({
   const [draft, setDraft] = useState("");
   const [connectQuery, setConnectQuery] = useState("");
   const [connectKind, setConnectKind] = useState<ProjectRelationKind>("related");
+  // A ref, not state: two fast Enters both read the same render's state, so a
+  // state flag wouldn't close the window between them.
+  const addingRef = useRef(false);
 
   // Tasks are the one thing not already in the graph payload, so they load per
   // selection. Keyed by node id upstream, so switching projects refetches.
@@ -1068,7 +1092,8 @@ function DetailPanel({
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
     const content = draft.trim();
-    if (!content) return;
+    if (!content || addingRef.current) return;
+    addingRef.current = true;
     setDraft("");
     try {
       const res = await fetch("/api/action-items", {
@@ -1085,6 +1110,8 @@ function DetailPanel({
       onTaskCountChange(1);
     } catch {
       onFail("Could not add that task.");
+    } finally {
+      addingRef.current = false;
     }
   }
 
