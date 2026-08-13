@@ -8,6 +8,10 @@ import {
   listProjects,
 } from "@/lib/projects";
 import { listLinksForProject } from "@/lib/project-links";
+import {
+  countRelationsForProject,
+  getProjectMap,
+} from "@/lib/project-relations";
 import { listMilestonesForProject } from "@/lib/milestones";
 import { listNotesForProject } from "@/lib/notes";
 import {
@@ -24,6 +28,7 @@ import { toClientItem } from "../../action-item-mapper";
 import { ProjectHeader } from "./project-header";
 import { ProjectLinks } from "../project-links";
 import { ProjectMilestones } from "../project-milestones";
+import { ProjectMap } from "../project-map";
 import { ProjectTimeline } from "../project-timeline";
 import { ProjectLog, type LogFutureNode } from "./project-log";
 import { detectLinkType, LINK_TYPE_LABEL } from "@/lib/link-type";
@@ -36,7 +41,16 @@ import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
 
-const TABS = ["overview", "tasks", "milestones", "meetings", "notes", "links", "files"] as const;
+const TABS = [
+  "overview",
+  "tasks",
+  "milestones",
+  "meetings",
+  "notes",
+  "map",
+  "links",
+  "files",
+] as const;
 type Tab = (typeof TABS)[number];
 
 function formatUpdatedShort(d: Date): string {
@@ -118,10 +132,10 @@ export default async function ProjectDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; depth?: string }>;
 }) {
   const { id } = await params;
-  const { tab: tabParam } = await searchParams;
+  const { tab: tabParam, depth: depthParam } = await searchParams;
 
   const project = await getProject(id);
   if (!project) notFound();
@@ -130,11 +144,15 @@ export default async function ProjectDetailPage({
   const workspace = await getWorkspaceById(project.workspaceId);
   const filesEnabled =
     workspace !== undefined && isFeatureEnabled(workspace, "files");
+  // Detail pages stay deep-linkable with the feature off, but a tab whose whole
+  // subject is disabled shouldn't be offered — same treatment as Files.
+  const projectsEnabled =
+    workspace !== undefined && isFeatureEnabled(workspace, "projects");
   // Links live inside the unified Files & Links tab; the standalone Links tab
   // only exists as the fallback when the files feature is off.
-  const visibleTabs = filesEnabled
-    ? TABS.filter((t) => t !== "links")
-    : TABS.filter((t) => t !== "files");
+  const visibleTabs = (
+    filesEnabled ? TABS.filter((t) => t !== "links") : TABS.filter((t) => t !== "files")
+  ).filter((t) => t !== "map" || projectsEnabled);
 
   // Old ?tab=links deep-links land on the merged tab.
   const requestedTab = tabParam === "links" && filesEnabled ? "files" : tabParam;
@@ -142,15 +160,26 @@ export default async function ProjectDetailPage({
     ? (requestedTab as Tab)
     : "overview";
 
-  const [meetings, actionItems, projects, links, notes, milestones] =
-    await Promise.all([
-      listMeetingsForProject(id),
-      listActionItemsForProject(id),
-      listProjects(project.workspaceId),
-      listLinksForProject(id),
-      listNotesForProject(id),
-      listMilestonesForProject(id),
-    ]);
+  const mapDepth: 1 | 2 = depthParam === "2" ? 2 : 1;
+  const [
+    meetings,
+    actionItems,
+    projects,
+    links,
+    notes,
+    milestones,
+    relationCount,
+    projectMap,
+  ] = await Promise.all([
+    listMeetingsForProject(id),
+    listActionItemsForProject(id),
+    listProjects(project.workspaceId),
+    listLinksForProject(id),
+    listNotesForProject(id),
+    listMilestonesForProject(id),
+    countRelationsForProject(id),
+    getProjectMap(id, { depth: mapDepth }),
+  ]);
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
 
   const today = todayInAppTz();
@@ -303,6 +332,7 @@ export default async function ProjectDetailPage({
     milestones: "Milestones",
     meetings: "Meetings",
     notes: "Notes",
+    map: "Map",
     links: "Links",
     files: "Files & Links",
   };
@@ -312,6 +342,7 @@ export default async function ProjectDetailPage({
     milestones: openMilestones.length,
     meetings: meetings.length,
     notes: notes.length,
+    map: relationCount,
     links: links.length,
     // Drive is the source of truth — no count without a live API call.
     files: null,
@@ -609,6 +640,28 @@ export default async function ProjectDetailPage({
               ))}
             </ul>
           )}
+        </section>
+      )}
+
+      {tab === "map" && projectsEnabled && projectMap && (
+        <section className="hub-card">
+          <div className="hub-card-head">
+            <h2>Map</h2>
+            {/* The hub tab is a quick look; the full surface is /map. */}
+            <Link
+              href={`/map?focus=${project.id}`}
+              className="ghost-btn ghost-btn-sm"
+            >
+              Open full map
+            </Link>
+          </div>
+          <ProjectMap
+            centreId={projectMap.centreId}
+            initialNodes={projectMap.nodes}
+            initialEdges={projectMap.edges}
+            depth={mapDepth}
+            truncated={projectMap.truncated}
+          />
         </section>
       )}
 

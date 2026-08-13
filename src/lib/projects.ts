@@ -1,5 +1,16 @@
 import "server-only";
-import { and, asc, count, desc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import { db } from "@/db";
 import {
   projects,
@@ -7,28 +18,34 @@ import {
   actionItems,
   type Project,
   type NewProject,
+  type ProjectStatus,
   type Meeting,
   type ActionItem,
 } from "@/db/schema";
 import { tryArchiveProjectFolder, tryRenameDriveFolder } from "./drive";
 
+// An explicit status allow-list, not "drop the filter when includeArchived" —
+// that older shape would have quietly leaked parked ideas (mid-meeting captures
+// that aren't real projects yet) into every includeArchived caller.
 export async function listProjects(
   workspaceId: string,
   opts?: {
     includeArchived?: boolean;
+    includeParked?: boolean;
   },
 ): Promise<Project[]> {
-  if (opts?.includeArchived) {
-    return db
-      .select()
-      .from(projects)
-      .where(eq(projects.workspaceId, workspaceId))
-      .orderBy(asc(projects.name));
-  }
+  const statuses: ProjectStatus[] = ["active"];
+  if (opts?.includeArchived) statuses.push("archived");
+  if (opts?.includeParked) statuses.push("parked");
   return db
     .select()
     .from(projects)
-    .where(and(eq(projects.workspaceId, workspaceId), eq(projects.status, "active")))
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        inArray(projects.status, statuses),
+      ),
+    )
     .orderBy(asc(projects.name));
 }
 
@@ -43,6 +60,7 @@ export async function createProject(
     name: string;
     description?: string;
     deadline?: string | null;
+    status?: ProjectStatus;
   },
 ): Promise<Project> {
   const values: NewProject = {
@@ -50,6 +68,7 @@ export async function createProject(
     name: input.name,
     description: input.description ?? "",
     deadline: input.deadline ?? null,
+    status: input.status ?? "active",
   };
   const [p] = await db.insert(projects).values(values).returning();
   return p;
@@ -61,7 +80,7 @@ export async function updateProject(
     name?: string;
     description?: string;
     deadline?: string | null;
-    status?: "active" | "archived";
+    status?: ProjectStatus;
   },
 ): Promise<Project | undefined> {
   const set: Partial<NewProject> = { updatedAt: new Date() };
