@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Arrangement } from "../project-graph-layout";
 
 // A floating palette for how the project bubbles look. It writes the `--pg-*`
 // custom properties inline on the map stage (which beats every stylesheet rule,
@@ -37,7 +38,14 @@ export type StyleLabValues = {
   ringGap: number;
   /** Vertical squash of each ring, 1 = perfectly circular rings. */
   squash: number;
+  /** How whole constellations are arranged relative to each other. */
+  arrangement: Arrangement;
 };
+
+const ARRANGEMENTS: { value: Arrangement; label: string }[] = [
+  { value: "scatter", label: "Scatter" },
+  { value: "shelf", label: "Rows" },
+];
 
 // The shipped look, mirroring globals.css and the layout module. Keep the three
 // in sync when applying a config from the readout.
@@ -53,10 +61,13 @@ export const STYLE_LAB_DEFAULTS: StyleLabValues = {
   clamp: 3,
   ringGap: 190,
   squash: 0.88,
+  arrangement: "scatter",
 };
 
+type NumericKey = Exclude<keyof StyleLabValues, "arrangement">;
+
 type Field = {
-  key: keyof StyleLabValues;
+  key: NumericKey;
   label: string;
   min: number;
   max: number;
@@ -82,11 +93,15 @@ const STORAGE_KEY = "mh.map.bubble-style.v1";
 
 const RANGE = new Map(FIELDS.map((f) => [f.key, { min: f.min, max: f.max }]));
 
+function isArrangement(v: unknown): v is Arrangement {
+  return ARRANGEMENTS.some((a) => a.value === v);
+}
+
 // Every number entering state goes through here. A cleared number input yields
 // `Number("") === 0` and a partial one like "-" yields NaN; unchecked, `size: 0`
 // collapses every bubble and `ringGap: NaN` produces non-finite positions, which
 // makes nodes vanish from the canvas entirely.
-function clampValue(key: keyof StyleLabValues, n: number): number {
+function clampValue(key: NumericKey, n: number): number {
   if (!Number.isFinite(n)) return STYLE_LAB_DEFAULTS[key];
   const range = RANGE.get(key);
   return range ? Math.min(range.max, Math.max(range.min, n)) : n;
@@ -99,10 +114,11 @@ function sanitise(raw: unknown): StyleLabValues {
   const next = { ...STYLE_LAB_DEFAULTS };
   if (typeof raw !== "object" || raw === null) return next;
   const source = raw as Record<string, unknown>;
-  for (const key of Object.keys(STYLE_LAB_DEFAULTS) as (keyof StyleLabValues)[]) {
-    const candidate = source[key];
-    if (typeof candidate === "number") next[key] = clampValue(key, candidate);
+  for (const f of FIELDS) {
+    const candidate = source[f.key];
+    if (typeof candidate === "number") next[f.key] = clampValue(f.key, candidate);
   }
+  if (isArrangement(source.arrangement)) next.arrangement = source.arrangement;
   return next;
 }
 
@@ -171,6 +187,7 @@ function readout(v: StyleLabValues): string {
     "/* project-graph-layout.ts */",
     `const RING_GAP = ${v.ringGap};`,
     `const SQUASH = ${v.squash};`,
+    `// default arrangement: ${v.arrangement}`,
   ].join("\n");
 }
 
@@ -199,7 +216,7 @@ export function MapStyleLab({
     };
   }, [values, stageRef]);
 
-  const set = (key: keyof StyleLabValues, n: number) =>
+  const set = (key: NumericKey, n: number) =>
     onChange({ ...values, [key]: clampValue(key, n) });
 
   if (!open) {
@@ -235,6 +252,30 @@ export function MapStyleLab({
       </div>
 
       <div className="stylelab-fields">
+        <div className="stylelab-row">
+          <span className="stylelab-label">
+            <label htmlFor="stylelab-arrangement">Layout</label>
+          </span>
+          <select
+            id="stylelab-arrangement"
+            className="stylelab-select"
+            value={values.arrangement}
+            onChange={(e) =>
+              onChange({
+                ...values,
+                arrangement: isArrangement(e.target.value)
+                  ? e.target.value
+                  : STYLE_LAB_DEFAULTS.arrangement,
+              })
+            }
+          >
+            {ARRANGEMENTS.map((a) => (
+              <option key={a.value} value={a.value}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </div>
         {FIELDS.map((f) => (
           // A row holds two controls for one setting, and a <label> can name
           // only one — so the row is a named group and each input carries its

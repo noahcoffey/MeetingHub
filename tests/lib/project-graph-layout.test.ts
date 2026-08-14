@@ -150,13 +150,63 @@ describe("project graph layout", () => {
     expect(rootOf(main, adj, (id) => id)).toBe("test1");
   });
 
-  it("separates unconnected projects into their own band", () => {
+  it("shelf mode still puts unconnected projects in a band below", () => {
     const nodes = [...NODES, node("loose1"), node("loose2")];
-    const p = layoutOverview(nodes, EDGES, SIZE);
+    const p = layoutOverview(nodes, EDGES, SIZE, { arrangement: "shelf" });
     const clusterYs = ["test1", "test4"].map((id) => p.get(id)!.y);
-    // The loose band sits below the constellations.
     expect(p.get("loose1")!.y).toBeGreaterThan(Math.max(...clusterYs));
     expect(p.get("loose2")!.y).toBeGreaterThan(Math.max(...clusterYs));
+  });
+
+  // The point of the scatter: a golden-angle spiral never lines items up, which
+  // is the whole complaint with the packed rows.
+  describe("scatter arrangement", () => {
+    const LOOSE = Array.from({ length: 12 }, (_, i) => node(`loose${i}`));
+    const nodes = [...NODES, ...LOOSE];
+
+    it("places every project exactly once", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      expect(p.size).toBe(nodes.length);
+      for (const n of nodes) expect(Number.isFinite(p.get(n.id)!.x)).toBe(true);
+    });
+
+    it("does not line the loose projects up into rows or columns", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      const pts = LOOSE.map((n) => p.get(n.id)!);
+      // In the old grid these shared a handful of x values and 2-3 y values.
+      const xs = new Set(pts.map((q) => Math.round(q.x / 8)));
+      const ys = new Set(pts.map((q) => Math.round(q.y / 8)));
+      expect(xs.size).toBeGreaterThan(pts.length * 0.75);
+      expect(ys.size).toBeGreaterThan(pts.length * 0.75);
+    });
+
+    it("keeps bubbles clear of each other", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      const pts = [...p.values()];
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          expect(dist(pts[i], pts[j])).toBeGreaterThan(80);
+        }
+      }
+    });
+
+    it("is deterministic", () => {
+      const a = layoutOverview(nodes, EDGES, SIZE);
+      const b = layoutOverview([...nodes].reverse(), [...EDGES].reverse(), SIZE);
+      for (const n of nodes) {
+        expect(a.get(n.id)!.x).toBeCloseTo(b.get(n.id)!.x, 6);
+        expect(a.get(n.id)!.y).toBeCloseTo(b.get(n.id)!.y, 6);
+      }
+    });
+
+    it("puts the busiest constellation nearest the middle", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      const centre = { x: SIZE.w / 2, y: SIZE.h / 2 };
+      const hub = dist(p.get("test1")!, centre);
+      for (const n of LOOSE) {
+        expect(dist(p.get(n.id)!, centre)).toBeGreaterThan(hub);
+      }
+    });
   });
 
   it("lays out several components without overlapping them", () => {
