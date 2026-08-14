@@ -443,6 +443,10 @@ export async function getProjectMap(
 // with no extra round trip; the panel fetches tasks lazily on selection.
 export type WorkspaceMapNode = MapNode & {
   openTasks: number;
+  // Where the user dragged this bubble, or null to let the layout place it.
+  // Overview-only: the hub's radial map has its own coordinate space.
+  mapX: number | null;
+  mapY: number | null;
 };
 
 // Every project in the workspace plus every edge between them — the standalone
@@ -458,6 +462,8 @@ export async function getWorkspaceMap(workspaceId: string): Promise<{
         name: projects.name,
         status: projects.status,
         deadline: projects.deadline,
+        mapX: projects.mapX,
+        mapY: projects.mapY,
       })
       .from(projects)
       .where(

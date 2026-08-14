@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { deleteProject, getProject, updateProject } from "@/lib/projects";
+import {
+  deleteProject,
+  getProject,
+  setProjectMapPosition,
+  updateProject,
+} from "@/lib/projects";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +40,40 @@ export const PATCH = auth(async (req, ctx) => {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
-  const { name, description, deadline, status } = (body ?? {}) as {
+  const { name, description, deadline, status, mapPosition } = (body ?? {}) as {
     name?: unknown;
     description?: unknown;
     deadline?: unknown;
     status?: unknown;
+    mapPosition?: unknown;
   };
+
+  // Dragging a bubble on the /map overview. `null` hands it back to the layout.
+  // Both axes must be finite numbers: a lone axis is corrupt state, and a NaN
+  // coordinate would propagate into the layout and drop nodes off the canvas.
+  if (mapPosition !== undefined) {
+    let at: { x: number; y: number } | null = null;
+    if (mapPosition !== null) {
+      const { x, y } = (mapPosition ?? {}) as { x?: unknown; y?: unknown };
+      if (
+        typeof x !== "number" ||
+        typeof y !== "number" ||
+        !Number.isFinite(x) ||
+        !Number.isFinite(y)
+      ) {
+        return NextResponse.json(
+          { error: "mapPosition must be {x, y} finite numbers, or null" },
+          { status: 400 },
+        );
+      }
+      at = { x, y };
+    }
+    const moved = await setProjectMapPosition(id, at);
+    if (!moved) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    return NextResponse.json({ item: moved });
+  }
 
   const patch: {
     name?: string;

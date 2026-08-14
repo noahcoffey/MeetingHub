@@ -12,6 +12,7 @@ import {
   type Connection,
   type Edge,
   type Node as FlowNode,
+  type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ProjectRelationKind, ProjectStatus } from "@/db/schema";
@@ -46,6 +47,9 @@ export type MapNode = {
   status: ProjectStatus;
   deadline: string | null;
   openTasks: number;
+  // Set once the user has dragged this bubble; null means the layout places it.
+  mapX: number | null;
+  mapY: number | null;
 };
 
 export type MapEdge = {
@@ -193,6 +197,20 @@ function MapWorkspaceInner({
         : edges.filter((e) => reach.has(e.fromId) && reach.has(e.toId)),
     [overview, edges, reach],
   );
+  // Where the user has dragged bubbles. Seeded from the server and updated as
+  // they're moved, so a drag survives a relayout without a round trip.
+  const pinned = useMemo(() => {
+    const out = new Map<string, Point>();
+    for (const n of nodes) {
+      if (n.mapX !== null && n.mapY !== null) out.set(n.id, { x: n.mapX, y: n.mapY });
+    }
+    return out;
+  }, [nodes]);
+  const pinnedRef = useRef(pinned);
+  useEffect(() => {
+    pinnedRef.current = pinned;
+  }, [pinned]);
+
   // A full re-layout is a deliberate event, not something that happens every
   // time the graph changes. Adding a project, drawing a connection or removing
   // one leaves every existing bubble exactly where it is — otherwise capturing
@@ -207,6 +225,8 @@ function MapWorkspaceInner({
       ringGap: labValues.ringGap,
       squash: labValues.squash,
       arrangement: labValues.arrangement,
+      // Read through a ref: moving one bubble must not re-lay-out the board.
+      pinned: pinnedRef.current,
     };
     if (overview) return layoutOverview(nodes, edges, size, spacing);
     // Focus mode is the same radial tree, just rooted on the focused project
@@ -468,6 +488,8 @@ function MapWorkspaceInner({
           status: "parked",
           deadline: null,
           openTasks: 0,
+          mapX: null,
+          mapY: null,
         },
       ]);
       setEdges((es) => [...es, data.relation as MapEdge]);
@@ -539,6 +561,88 @@ function MapWorkspaceInner({
         },
       })),
     [visibleEdges, selectedEdgeId, nodeById, activateEdge],
+  );
+
+  // ---- dragging a bubble ----
+  //
+  // `nodes` is fully controlled, so React Flow cannot move anything by itself:
+  // without applying its position changes the bubble would snap back on every
+  // frame. Only `position` changes are taken — selection and dimensions are
+  // owned here, not by React Flow.
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const moves = changes.filter(
+      (c): c is Extract<NodeChange, { type: "position" }> =>
+        c.type === "position" && !!c.position,
+    );
+    if (moves.length === 0) return;
+    setPoints((prev) => {
+      const next = new Map(prev);
+      for (const m of moves) {
+        if (m.position) next.set(m.id, { x: m.position.x, y: m.position.y });
+      }
+      return next;
+    });
+  }, []);
+
+  // A drag beginning while a relayout is still animating would fight the tween
+  // for the same node, so the tween is cancelled outright.
+  const onNodeDragStart = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+  }, []);
+
+  const onNodeDragStop = useCallback(
+    (_: unknown, node: FlowNode) => {
+      const at = { x: node.position.x, y: node.position.y };
+      // The target as well as the drawn point: leaving `targets` alone would
+      // have the next tween pull the bubble back where the layout wanted it.
+      setTargets((prev) => new Map(prev).set(node.id, at));
+      setPoints((prev) => new Map(prev).set(node.id, at));
+      const before = nodes;
+      setNodes((ns) =>
+        ns.map((n) => (n.id === node.id ? { ...n, mapX: at.x, mapY: at.y } : n)),
+      );
+      void (async () => {
+        try {
+          const res = await fetch(`/api/projects/${node.id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ mapPosition: at }),
+          });
+          if (!res.ok) throw new Error();
+        } catch {
+          setNodes(before);
+          fail("Could not save that position.");
+        }
+      })();
+    },
+    [nodes, fail],
+  );
+
+  // Hand a bubble back to the layout. Without this a misplaced drag could only
+  // be undone by dragging again, never actually un-pinned.
+  const unpin = useCallback(
+    async (id: string) => {
+      const before = nodes;
+      setNodes((ns) =>
+        ns.map((n) => (n.id === id ? { ...n, mapX: null, mapY: null } : n)),
+      );
+      setTidy((n) => n + 1);
+      try {
+        const res = await fetch(`/api/projects/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mapPosition: null }),
+        });
+        if (!res.ok) throw new Error();
+      } catch {
+        setNodes(before);
+        fail("Could not reset that position.");
+      }
+    },
+    [nodes, fail],
   );
 
   // A completed click-to-connect also bubbles a click to the node underneath.
@@ -671,10 +775,14 @@ function MapWorkspaceInner({
             edges={flowEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            // Positions are computed by the layouts above and re-derived on
-            // every focus change, so a hand-dragged node would be clobbered by
-            // the next tween. Nothing persists a manual position.
-            nodesDraggable={false}
+            // Draggable in the overview only, which is the one view whose
+            // coordinates are stable enough to persist. Focus mode and the hub
+            // map are radial views rooted on a project — a saved overview
+            // coordinate means nothing there.
+            nodesDraggable={overview}
+            onNodesChange={onNodesChange}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDragStop={onNodeDragStop}
             // React Flow reorders the node DOM to raise a selected node. That
             // detaches and re-inserts the element mid-gesture, which resets the
             // browser's click tracking and kills the double-click that centres.
@@ -763,6 +871,8 @@ function MapWorkspaceInner({
             onRetype={retype}
             onDisconnect={disconnect}
             onPromote={() => promote(selected.id)}
+            isPinned={selected.mapX !== null && selected.mapY !== null}
+            onUnpin={() => unpin(selected.id)}
             onClose={() => setSelectedId(null)}
             onTaskCountChange={(delta) =>
               setNodes((ns) =>
@@ -863,6 +973,8 @@ function DetailPanel({
   onRetype,
   onDisconnect,
   onPromote,
+  isPinned,
+  onUnpin,
   onClose,
   onTaskCountChange,
   onFail,
@@ -879,6 +991,8 @@ function DetailPanel({
   onRetype: (edgeId: string, kind: ProjectRelationKind) => void;
   onDisconnect: (edgeId: string) => void;
   onPromote: () => void;
+  isPinned: boolean;
+  onUnpin: () => void;
   onClose: () => void;
   onTaskCountChange: (delta: number) => void;
   onFail: (message: string) => void;
@@ -984,6 +1098,7 @@ function DetailPanel({
           <p className="muted mapx-panel-meta">
             {node.status === "parked" ? "Parked idea" : "Project"}
             {node.deadline && ` · due ${node.deadline}`}
+            {isPinned && " · placed by hand"}
           </p>
         </div>
         <button
@@ -1008,6 +1123,16 @@ function DetailPanel({
         {node.status === "parked" && (
           <button type="button" className="ghost-btn ghost-btn-sm" onClick={onPromote}>
             Promote
+          </button>
+        )}
+        {isPinned && (
+          <button
+            type="button"
+            className="ghost-btn ghost-btn-sm"
+            onClick={onUnpin}
+            title="Let the layout place this again"
+          >
+            Reset position
           </button>
         )}
       </div>

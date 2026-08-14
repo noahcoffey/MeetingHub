@@ -39,6 +39,8 @@ export default async function MapPage({
         status: n.status,
         deadline: n.deadline,
         openTasks: n.openTasks,
+        mapX: n.mapX,
+        mapY: n.mapY,
       }))}
       initialEdges={edges}
       initialFocusId={focusId}

@@ -8,6 +8,7 @@ import {
   date,
   integer,
   real,
+  doublePrecision,
   boolean,
   bigint,
   unique,
@@ -307,6 +308,14 @@ export const projects = pgTable(
     // This project's Google Drive folder (under <workspace>/Projects/), lazily
     // created on first Files-tab use; moved to Projects/_archived on delete.
     driveFolderId: text("drive_folder_id"),
+    // Where the user dragged this bubble on the /map overview, in the graph's
+    // own coordinate space (NOT screen pixels — the viewport pans and zooms over
+    // it). Both null = the layout places it. Always written and cleared as a
+    // pair; see setProjectMapPosition. Only the overview honours these: focus
+    // mode and the hub Map tab are radial views rooted on a project, where an
+    // overview coordinate means nothing.
+    mapX: doublePrecision("map_x"),
+    mapY: doublePrecision("map_y"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

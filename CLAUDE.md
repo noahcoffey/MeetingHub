@@ -131,7 +131,9 @@ Defined in `src/db/schema.ts`. Core tables:
   the project's Drive folder tree — the hub's unified **Files & Links** tab and overview card show
   folders/files (Drive) and links (Postgres) as one collection; a standalone Links tab exists only
   when the `files` feature is off. Dead placements self-heal to the top level (base listing checks
-  + re-home on app-side folder trash). Deleting a project detaches (`set null`) its
+  + re-home on app-side folder trash). Nullable `map_x`/`map_y` (migration 0039) hold where the user
+  dragged this project's bubble on the /map overview, in graph space — written as a pair, both or
+  neither, and honoured only by the overview. Deleting a project detaches (`set null`) its
   meetings/tasks; links cascade.
 - `project_milestones` — named checkpoints within a project (`name`, optional `due_date`, manual
   `completed_at`; FK cascade; no workspace_id — inherits via the project). Tasks link via

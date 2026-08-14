@@ -224,7 +224,9 @@ describe("project graph layout", () => {
 
     it("puts the busiest constellation nearest the middle", () => {
       const p = layoutOverview(nodes, EDGES, SIZE);
-      const centre = { x: SIZE.w / 2, y: SIZE.h / 2 };
+      // The overview is origin-anchored so saved positions stay meaningful;
+      // the viewport frames it, so "the middle" is (0, 0), not the stage centre.
+      const centre = { x: 0, y: 0 };
       const hub = dist(p.get("test1")!, centre);
       for (const n of LOOSE) {
         expect(dist(p.get(n.id)!, centre)).toBeGreaterThan(hub);
@@ -265,6 +267,58 @@ describe("project graph layout", () => {
       for (const other of seen) expect(dist(at, other)).toBeGreaterThan(40);
       seen.push(at);
     }
+  });
+
+  // Dragging a bubble persists its position, so the layout must honour it
+  // exactly and work around it.
+  describe("pinned positions", () => {
+    it("places a pinned project exactly where it was dropped", () => {
+      const pinned = new Map([["test3", { x: -900, y: 640 }]]);
+      const p = layoutOverview(NODES, EDGES, SIZE, { pinned });
+      expect(p.get("test3")!.x).toBeCloseTo(-900, 6);
+      expect(p.get("test3")!.y).toBeCloseTo(640, 6);
+    });
+
+    it("moves a pinned project's whole constellation with it, keeping its shape", () => {
+      const loose = layoutOverview(NODES, EDGES, SIZE);
+      const shape = (m: Map<string, { x: number; y: number }>) =>
+        dist(m.get("test1")!, m.get("test4")!);
+      const pinned = new Map([["test1", { x: 1500, y: -1200 }]]);
+      const p = layoutOverview(NODES, EDGES, SIZE, { pinned });
+      expect(p.get("test1")!.x).toBeCloseTo(1500, 6);
+      // The tree is rigid: relative geometry survives the move.
+      expect(shape(p)).toBeCloseTo(shape(loose), 6);
+    });
+
+    it("keeps auto-placed projects clear of pinned ones", () => {
+      const extra = Array.from({ length: 10 }, (_, i) => node(`extra${i}`));
+      const pinned = new Map([["extra0", { x: 0, y: 0 }]]);
+      const p = layoutOverview([...NODES, ...extra], EDGES, SIZE, { pinned });
+      const at = p.get("extra0")!;
+      for (const [id, q] of p) {
+        if (id === "extra0") continue;
+        expect(dist(at, q)).toBeGreaterThan(80);
+      }
+    });
+
+    it("is deterministic with pins, and unaffected by stage size", () => {
+      const pinned = new Map([["test4", { x: 400, y: -300 }]]);
+      const a = layoutOverview(NODES, EDGES, SIZE, { pinned });
+      // Origin-anchored: a different window must not move anything, or a saved
+      // position would mean something different next session.
+      const b = layoutOverview(NODES, EDGES, { w: 640, h: 2000 }, { pinned });
+      for (const n of NODES) {
+        expect(a.get(n.id)!.x).toBeCloseTo(b.get(n.id)!.x, 6);
+        expect(a.get(n.id)!.y).toBeCloseTo(b.get(n.id)!.y, 6);
+      }
+    });
+
+    it("ignores a pin for a project that no longer exists", () => {
+      const pinned = new Map([["ghost", { x: 10, y: 10 }]]);
+      const p = layoutOverview(NODES, EDGES, SIZE, { pinned });
+      expect(p.size).toBe(NODES.length);
+      expect(p.has("ghost")).toBe(false);
+    });
   });
 
   describe("placeNear", () => {

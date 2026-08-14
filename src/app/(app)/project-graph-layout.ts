@@ -112,7 +112,15 @@ export type Arrangement =
   | "scatter" // golden-angle spiral: nothing lines up
   | "shelf"; // packed rows, biggest first
 
-export type LayoutOptions = Spacing & { arrangement?: Arrangement };
+export type LayoutOptions = Spacing & {
+  arrangement?: Arrangement;
+  /**
+   * Projects the user has dragged somewhere, in graph space. These are placed
+   * exactly where they were left — the layout works around them, never over
+   * them.
+   */
+  pinned?: Map<string, Point>;
+};
 
 // Bubble geometry the spacing is derived from (`--pg-size` in globals.css).
 const NODE_DIAMETER = 126;
@@ -260,6 +268,7 @@ function extentOf(item: Placed): number {
 function arrangeScatter(
   items: Placed[],
   size: { w: number; h: number },
+  reserved: { x: number; y: number; r: number }[] = [],
 ): Map<string, Point> {
   const out = new Map<string, Point>();
   if (items.length === 0) return out;
@@ -277,7 +286,9 @@ function arrangeScatter(
   // rather than leaving the board's left and right thirds empty.
   const squashY = Math.min(1, Math.max(0.62, size.h / Math.max(size.w, 1)));
 
-  const settled: { x: number; y: number; r: number }[] = [];
+  // Seeded with the pinned bubbles, so auto-placed work flows around what the
+  // user put down rather than landing on top of it.
+  const settled: { x: number; y: number; r: number }[] = [...reserved];
   sorted.forEach((item, i) => {
     const angle = i * GOLDEN_ANGLE;
     const at = (radius: number) => ({
@@ -386,6 +397,13 @@ function arrangeShelf(
 }
 
 // The whole workspace on one board.
+//
+// Coordinates are **origin-anchored**, not stage-centred. That matters because
+// dragged positions are persisted: if the composition were shifted by its own
+// bounding box (which changes as projects come and go) or by the window size,
+// a pinned bubble would land somewhere different next session — the precise
+// "it moved on me" this feature exists to prevent. The viewport does the
+// framing instead, via fitView after a relayout.
 export function layoutOverview(
   nodes: LayoutNode[],
   edges: LayoutEdge[],
@@ -394,14 +412,15 @@ export function layoutOverview(
 ): Map<string, Point> {
   if (nodes.length === 0) return new Map<string, Point>();
 
+  const pinned = opts.pinned ?? new Map<string, Point>();
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const nameOf = (id: string) => byId.get(id)?.name ?? "";
   const adj = adjacencyOf(nodes, edges);
   const groups = componentsOf(nodes, adj);
 
-  // Keyed on the component's own smallest id, so ordering never depends on
-  // which node its BFS happened to start from.
   const laid: Placed[] = groups.map((ids) => ({
+    // Keyed on the component's own smallest id, so ordering never depends on
+    // which node its BFS happened to start from.
     key: [...ids].sort()[0],
     tree:
       ids.length > 1
@@ -409,16 +428,50 @@ export function layoutOverview(
         : { points: new Map([[ids[0], { x: 0, y: 0 }]]), halfW: 0, halfH: 0 },
   }));
 
-  const placedPoints =
+  // A component is pinned once any of its projects is: the tree keeps its shape
+  // and is anchored so the pinned member sits exactly where it was dropped.
+  // Pinning two members of one component can only honour the first — the tree
+  // is rigid — so the earliest by id wins, deterministically.
+  const anchored = new Map<string, Point>();
+  const free: Placed[] = [];
+  for (const item of laid) {
+    const held = [...item.tree.points.keys()]
+      .filter((id) => pinned.has(id))
+      .sort()[0];
+    if (held === undefined) {
+      free.push(item);
+      continue;
+    }
+    const at = pinned.get(held) as Point;
+    const offset = item.tree.points.get(held) as Point;
+    for (const [id, p] of item.tree.points) {
+      anchored.set(id, { x: at.x + p.x - offset.x, y: at.y + p.y - offset.y });
+    }
+  }
+
+  const reserved = laid
+    .filter((item) => anchored.has([...item.tree.points.keys()][0]))
+    .map((item) => {
+      const first = anchored.get([...item.tree.points.keys()][0]) as Point;
+      const held = item.tree.points.get([...item.tree.points.keys()][0]) as Point;
+      return {
+        x: first.x - held.x,
+        y: first.y - held.y,
+        r: extentOf(item),
+      };
+    });
+
+  const placed =
     opts.arrangement === "shelf"
       ? arrangeShelf(
-          laid.filter((l) => l.tree.points.size > 1),
-          groups.filter((g) => g.length === 1).map((g) => g[0]),
+          free.filter((l) => l.tree.points.size > 1),
+          free.filter((l) => l.tree.points.size === 1).map((l) => [...l.tree.points.keys()][0]),
           size,
         )
-      : arrangeScatter(laid, size);
+      : arrangeScatter(free, size, reserved);
 
-  return centreComposition(placedPoints, size);
+  for (const [id, p] of anchored) placed.set(id, p);
+  return placed;
 }
 
 // Drops a finished composition into the middle of the stage. Both axes: the

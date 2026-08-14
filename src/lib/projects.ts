@@ -74,6 +74,28 @@ export async function createProject(
   return p;
 }
 
+// Where the user dragged this project's bubble on the /map overview, or null to
+// hand it back to the layout. Written as a pair: a lone axis is corrupt state,
+// and the map treats "pinned" as both-present. Non-finite values are refused
+// outright — Postgres `double precision` will happily store NaN, and a NaN
+// coordinate propagates into the layout and removes nodes from the canvas.
+export async function setProjectMapPosition(
+  id: string,
+  at: { x: number; y: number } | null,
+): Promise<Project | undefined> {
+  if (at && (!Number.isFinite(at.x) || !Number.isFinite(at.y))) return undefined;
+  const [p] = await db
+    .update(projects)
+    .set({
+      mapX: at ? at.x : null,
+      mapY: at ? at.y : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(projects.id, id))
+    .returning();
+  return p;
+}
+
 export async function updateProject(
   id: string,
   patch: {
