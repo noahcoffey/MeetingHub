@@ -150,13 +150,86 @@ describe("project graph layout", () => {
     expect(rootOf(main, adj, (id) => id)).toBe("test1");
   });
 
-  it("separates unconnected projects into their own band", () => {
+  it("shelf mode still puts unconnected projects in a band below", () => {
     const nodes = [...NODES, node("loose1"), node("loose2")];
-    const p = layoutOverview(nodes, EDGES, SIZE);
+    const p = layoutOverview(nodes, EDGES, SIZE, { arrangement: "shelf" });
     const clusterYs = ["test1", "test4"].map((id) => p.get(id)!.y);
-    // The loose band sits below the constellations.
     expect(p.get("loose1")!.y).toBeGreaterThan(Math.max(...clusterYs));
     expect(p.get("loose2")!.y).toBeGreaterThan(Math.max(...clusterYs));
+  });
+
+  // The point of the scatter: a golden-angle spiral stops the board resolving
+  // into the rows and columns that were the complaint about the packed grid.
+  describe("scatter arrangement", () => {
+    const LOOSE = Array.from({ length: 12 }, (_, i) => node(`loose${i}`));
+    const nodes = [...NODES, ...LOOSE];
+
+    it("places every project exactly once", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      expect(p.size).toBe(nodes.length);
+      for (const n of nodes) expect(Number.isFinite(p.get(n.id)!.x)).toBe(true);
+    });
+
+    // A heuristic, deliberately: the golden angle guarantees each item its own
+    // direction out from the centre, not that no two ever share a coordinate.
+    // What it rules out is the *systematic* alignment of a grid, and these
+    // thresholds are far outside what the packed rows could produce — there,
+    // twelve loose projects shared a handful of x values and two or three y.
+    it("does not line the loose projects up into rows or columns", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      const pts = LOOSE.map((n) => p.get(n.id)!);
+      const BUCKET = 8; // px; coordinates within this count as aligned
+      const xs = new Set(pts.map((q) => Math.round(q.x / BUCKET)));
+      const ys = new Set(pts.map((q) => Math.round(q.y / BUCKET)));
+      expect(xs.size).toBeGreaterThan(pts.length * 0.75);
+      expect(ys.size).toBeGreaterThan(pts.length * 0.75);
+    });
+
+    // The guard that actually is absolute: no overlap, even when one enormous
+    // constellation and a crowd of singletons pushes the stepping loop past its
+    // bound and onto the provably-clear fallback radius.
+    it("keeps bubbles clear even when one component dwarfs the rest", () => {
+      const bigIds = Array.from({ length: 40 }, (_, i) => node(`big${i}`));
+      const spokes = bigIds.slice(1).map((n) => edge("big0", n.id));
+      const crowd = Array.from({ length: 25 }, (_, i) => node(`tiny${i}`));
+      const p = layoutOverview([...bigIds, ...crowd], spokes, SIZE);
+      expect(p.size).toBe(bigIds.length + crowd.length);
+      const pts = [...p.values()];
+      for (const q of pts) expect(Number.isFinite(q.x) && Number.isFinite(q.y)).toBe(true);
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          expect(dist(pts[i], pts[j])).toBeGreaterThan(80);
+        }
+      }
+    });
+
+    it("keeps bubbles clear of each other", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      const pts = [...p.values()];
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          expect(dist(pts[i], pts[j])).toBeGreaterThan(80);
+        }
+      }
+    });
+
+    it("is deterministic", () => {
+      const a = layoutOverview(nodes, EDGES, SIZE);
+      const b = layoutOverview([...nodes].reverse(), [...EDGES].reverse(), SIZE);
+      for (const n of nodes) {
+        expect(a.get(n.id)!.x).toBeCloseTo(b.get(n.id)!.x, 6);
+        expect(a.get(n.id)!.y).toBeCloseTo(b.get(n.id)!.y, 6);
+      }
+    });
+
+    it("puts the busiest constellation nearest the middle", () => {
+      const p = layoutOverview(nodes, EDGES, SIZE);
+      const centre = { x: SIZE.w / 2, y: SIZE.h / 2 };
+      const hub = dist(p.get("test1")!, centre);
+      for (const n of LOOSE) {
+        expect(dist(p.get(n.id)!, centre)).toBeGreaterThan(hub);
+      }
+    });
   });
 
   it("lays out several components without overlapping them", () => {

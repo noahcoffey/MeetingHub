@@ -201,9 +201,25 @@ Defined in `src/db/schema.ts`. Core tables:
     satellites next to *it* rather than spread around a shared ring — the old single-ring-per-
     component layout sent a node's own satellites to the far side and their edges crossed the
     middle as chords. Non-tree edges still draw; they just don't decide position. Components are
-    shelf-packed by their real extent, not dropped into equal grid cells. Focus mode is the same
-    tree, rooted on `focusId` and cut to two hops. The tests encode the complaint directly (a
-    satellite must be nearer its own parent than any other), so keep them honest.
+    arranged by the chosen **arrangement**, and focus mode is the same tree rooted on `focusId` and
+    cut to two hops.
+  - **Arrangement** is how whole constellations sit relative to each other, independent of the tree
+    inside them. `scatter` (the default) drops each component — a lone project is a component of one
+    — onto a **golden-angle spiral**: turn ~137.5°, step out by √i. That angle is irrational against
+    a full turn, so every item gets its own direction out from the centre and the sequence never
+    repeats; the board stops resolving into the rows and columns the old packed layout produced.
+    (A strong tendency, not a coordinate guarantee — two items on different spokes can still share
+    an x. The test asserting this is explicitly a heuristic.) Busiest constellations sort first and
+    land centrally; loose projects drift outward. The spiral evens out *density*, not clearance, so
+    each item is nudged along its own angle until it clears what's placed, falling back to a
+    provably-clear radius if that stepping runs out — deterministic, no relaxation pass, no
+    simulation. `shelf` is the old packed rows, kept for comparison and selectable in the palette.
+  - **Ring radius grows with crowding.** A fixed `depth × RING_GAP` cramped a busy ring: thirty
+    direct relations each get a sliver of angle, and at a fixed radius the bubbles overlap. Arc
+    length is wedge × radius, so each ring is pushed out until its thinnest wedge is worth a whole
+    bubble, kept monotonic so a child never lands inside its parent's ring.
+  - The layout tests encode the complaints directly — a satellite must be nearer its own parent than
+    any other, and bubbles must never overlap — so keep them honest.
   - **Bubbles are uniform circles** (`--pg-size` on `.pg-node`), name centred and wrapped over up to
     three lines — the old pill clipped anything past ~18 characters to an ellipsis. Uniform size is
     deliberate: bubbles that grow to fit their text imply a hierarchy of importance the data doesn't
