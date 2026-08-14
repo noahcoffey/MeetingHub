@@ -102,8 +102,26 @@ export function rootOf(
   )[0];
 }
 
-/** Spacing overrides, so the dev style palette can retune the board live. */
+/** Spacing overrides, so the style palette can retune the board live. */
 export type Spacing = { ringGap?: number; squash?: number };
+
+// How components and unconnected projects are arranged relative to each other.
+// The radial tree *inside* a component is the same either way — this is only
+// about where each constellation lands on the board.
+export type Arrangement =
+  | "scatter" // golden-angle spiral: nothing lines up
+  | "shelf"; // packed rows, biggest first
+
+export type LayoutOptions = Spacing & { arrangement?: Arrangement };
+
+// Half a bubble plus a little air, used to keep placed items off each other.
+const NODE_HALF = 66;
+const ITEM_GAP = 26;
+
+// 137.5° — consecutive items on a spiral at this angle never fall into rows,
+// columns or spokes, which is exactly what a grid does wrong. Same maths a
+// sunflower head uses to pack seeds without lining any of them up.
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 export type TreeLayout = {
   points: Map<string, Point>;
@@ -194,40 +212,84 @@ export function radialTree(
   return { points, halfW, halfH };
 }
 
-// The whole workspace on one board: connected clusters up top, then the
-// not-yet-connected projects packed into rows underneath. Clusters are packed
-// by their real size rather than dropped into equal grid cells, so a pair
-// doesn't get the same acreage as a twelve-project constellation.
-export function layoutOverview(
-  nodes: LayoutNode[],
-  edges: LayoutEdge[],
+type Placed = { key: string; tree: TreeLayout };
+
+// Radius of the circle a component needs, measured from its own centre.
+function extentOf(item: Placed): number {
+  return Math.hypot(item.tree.halfW, item.tree.halfH) + NODE_HALF + ITEM_GAP;
+}
+
+// Golden-angle scatter. Each component (a lone project is just a component of
+// one) goes on a phyllotaxis spiral: turn 137.5° and step out by √i. Because
+// that angle is irrational with respect to a full turn, no two items ever share
+// a row, a column or a spoke — which is the whole complaint with a grid.
+// Busiest constellations sort first so they land near the middle and the loose
+// projects drift outward.
+//
+// The spiral gives an even *density*, not clearance, so a big constellation can
+// still overlap a neighbour. Each item is nudged further out along its own
+// angle until it clears everything already placed, which keeps the arrangement
+// deterministic — no relaxation pass, no simulation.
+function arrangeScatter(
+  items: Placed[],
   size: { w: number; h: number },
-  spacing: Spacing = {},
 ): Map<string, Point> {
   const out = new Map<string, Point>();
-  if (nodes.length === 0) return out;
+  if (items.length === 0) return out;
 
-  const nameOf = (id: string) =>
-    nodes.find((n) => n.id === id)?.name ?? "";
-  const adj = adjacencyOf(nodes, edges);
-  const groups = componentsOf(nodes, adj);
-  const clusters = groups.filter((g) => g.length > 1);
-  const singles = groups.filter((g) => g.length === 1).map((g) => g[0]);
+  const sorted = [...items].sort(
+    (a, b) =>
+      b.tree.points.size - a.tree.points.size ||
+      extentOf(b) - extentOf(a) ||
+      a.key.localeCompare(b.key),
+  );
 
-  const laid = clusters.map((ids) => ({
-    ids,
-    tree: radialTree(rootOf(ids, adj, nameOf), ids, adj, spacing),
-  }));
+  const radii = sorted.map(extentOf);
+  const step = (radii.reduce((t, r) => t + r, 0) / radii.length) * 1.55;
+  // Stages are wider than they are tall, so the spiral is flattened to match
+  // rather than leaving the board's left and right thirds empty.
+  const squashY = Math.min(1, Math.max(0.62, size.h / Math.max(size.w, 1)));
 
-  // Shelf-pack the clusters: fill a row until the next one won't fit, then drop
-  // to a new row whose height is the tallest thing in it.
+  const settled: { x: number; y: number; r: number }[] = [];
+  sorted.forEach((item, i) => {
+    const angle = i * GOLDEN_ANGLE;
+    let r = step * Math.sqrt(i);
+    let x = Math.cos(angle) * r;
+    let y = Math.sin(angle) * r * squashY;
+    for (let guard = 0; guard < 400; guard++) {
+      const clashes = settled.some(
+        (p) => Math.hypot(p.x - x, p.y - y) < p.r + radii[i],
+      );
+      if (!clashes) break;
+      r += step * 0.12;
+      x = Math.cos(angle) * r;
+      y = Math.sin(angle) * r * squashY;
+    }
+    settled.push({ x, y, r: radii[i] });
+    for (const [id, p] of item.tree.points) {
+      out.set(id, { x: x + p.x, y: y + p.y });
+    }
+  });
+
+  return out;
+}
+
+// Packed rows: clusters shelved biggest-first, loose projects in a band
+// underneath. Kept because it is compact and predictable, but everything in it
+// lines up, which is what makes a busy board read as a spreadsheet.
+function arrangeShelf(
+  clusters: Placed[],
+  singles: string[],
+  size: { w: number; h: number },
+): Map<string, Point> {
+  const out = new Map<string, Point>();
   let cursorX = 0;
   let rowTop = 0;
   let rowH = 0;
-  const rows: { items: typeof laid; top: number; h: number; w: number }[] = [];
-  let row: typeof laid = [];
-  const placements = new Map<string, Point>(); // cluster root -> centre
-  for (const item of laid) {
+  const rows: { items: Placed[]; top: number; h: number; w: number }[] = [];
+  let row: Placed[] = [];
+  const placements = new Map<string, Point>();
+  for (const item of clusters) {
     const w = item.tree.halfW * 2 + CLUSTER_PAD_X * 2;
     const h = item.tree.halfH * 2 + CLUSTER_PAD_Y * 2;
     if (row.length > 0 && cursorX + w > size.w) {
@@ -237,21 +299,19 @@ export function layoutOverview(
       rowH = 0;
       row = [];
     }
-    placements.set(item.ids[0], {
-      x: cursorX + w / 2,
-      y: rowTop + h / 2,
-    });
+    placements.set(item.key, { x: cursorX + w / 2, y: rowTop + h / 2 });
     cursorX += w;
     rowH = Math.max(rowH, h);
     row.push(item);
   }
-  if (row.length > 0) rows.push({ items: row, top: rowTop, h: rowH, w: cursorX });
+  if (row.length > 0) {
+    rows.push({ items: row, top: rowTop, h: rowH, w: cursorX });
+  }
 
-  // Centre each row horizontally, and each cluster vertically inside its row.
   for (const r of rows) {
     const shiftX = (size.w - r.w) / 2;
     for (const item of r.items) {
-      const at = placements.get(item.ids[0]);
+      const at = placements.get(item.key);
       if (!at) continue;
       const cx = at.x + shiftX;
       const cy = r.top + r.h / 2;
@@ -262,7 +322,6 @@ export function layoutOverview(
   }
 
   const clustersBottom = rows.reduce((t, r) => t + r.h, 0);
-
   if (singles.length > 0) {
     const perRow = Math.max(
       1,
@@ -278,21 +337,58 @@ export function layoutOverview(
       });
     });
   }
-
-  return centreVertically(out, size);
+  return out;
 }
 
-// Everything above is laid out from the top down; this drops the finished
-// composition into the middle of the stage.
-export function centreVertically(
+// The whole workspace on one board.
+export function layoutOverview(
+  nodes: LayoutNode[],
+  edges: LayoutEdge[],
+  size: { w: number; h: number },
+  opts: LayoutOptions = {},
+): Map<string, Point> {
+  if (nodes.length === 0) return new Map<string, Point>();
+
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const nameOf = (id: string) => byId.get(id)?.name ?? "";
+  const adj = adjacencyOf(nodes, edges);
+  const groups = componentsOf(nodes, adj);
+
+  // Keyed on the component's own smallest id, so ordering never depends on
+  // which node its BFS happened to start from.
+  const laid: Placed[] = groups.map((ids) => ({
+    key: [...ids].sort()[0],
+    tree:
+      ids.length > 1
+        ? radialTree(rootOf(ids, adj, nameOf), ids, adj, opts)
+        : { points: new Map([[ids[0], { x: 0, y: 0 }]]), halfW: 0, halfH: 0 },
+  }));
+
+  const placedPoints =
+    opts.arrangement === "shelf"
+      ? arrangeShelf(
+          laid.filter((l) => l.tree.points.size > 1),
+          groups.filter((g) => g.length === 1).map((g) => g[0]),
+          size,
+        )
+      : arrangeScatter(laid, size);
+
+  return centreComposition(placedPoints, size);
+}
+
+// Drops a finished composition into the middle of the stage. Both axes: the
+// scatter is built around the origin, and the shelf is built from the top down.
+export function centreComposition(
   points: Map<string, Point>,
   size: { w: number; h: number },
 ): Map<string, Point> {
+  if (points.size === 0) return points;
+  const xs = [...points.values()].map((p) => p.x);
   const ys = [...points.values()].map((p) => p.y);
-  if (ys.length === 0) return points;
-  const shift = size.h / 2 - (Math.min(...ys) + Math.max(...ys)) / 2;
+  const dx = size.w / 2 - (Math.min(...xs) + Math.max(...xs)) / 2;
+  const dy = size.h / 2 - (Math.min(...ys) + Math.max(...ys)) / 2;
   const out = new Map<string, Point>();
-  for (const [id, p] of points) out.set(id, { x: p.x, y: p.y + shift });
+  for (const [id, p] of points) out.set(id, { x: p.x + dx, y: p.y + dy });
   return out;
 }
 

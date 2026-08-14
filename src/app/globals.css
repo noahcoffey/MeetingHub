@@ -7746,3 +7746,12 @@ html {
 .pg-node.state-archived {
   opacity: 0.75;
 }
+.stylelab-select {
+  grid-column: 2 / -1;
+  font-size: 0.76rem;
+  padding: 0.2rem 0.3rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}

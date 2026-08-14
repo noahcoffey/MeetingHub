@@ -26,7 +26,7 @@ import {
   type ProjectNodeData,
 } from "../project-graph";
 import {
-  centreVertically,
+  centreComposition,
   layoutOverview,
   placeNear,
   radialTree,
@@ -199,13 +199,14 @@ function MapWorkspaceInner({
   // an idea mid-meeting makes the whole board rearrange itself, which reads as
   // a page reload rather than "a thing appeared". Relayout happens on: mount,
   // switching between overview and focus, a resize, and the Tidy button.
-  const layoutKey = `${overview ? "overview" : focusId}|${Math.round(size.w)}x${Math.round(size.h)}|${labValues.ringGap}x${labValues.squash}`;
+  const layoutKey = `${overview ? "overview" : focusId}|${Math.round(size.w)}x${Math.round(size.h)}|${labValues.ringGap}x${labValues.squash}|${labValues.arrangement}`;
   const [tidyCount, setTidy] = useState(0);
 
   const computeLayout = useCallback((): Map<string, Point> => {
     const spacing = {
       ringGap: labValues.ringGap,
       squash: labValues.squash,
+      arrangement: labValues.arrangement,
     };
     if (overview) return layoutOverview(nodes, edges, size, spacing);
     // Focus mode is the same radial tree, just rooted on the focused project
@@ -232,7 +233,7 @@ function MapWorkspaceInner({
     for (const [id, p] of points) {
       centred.set(id, { x: size.w / 2 + p.x, y: size.h / 2 + p.y });
     }
-    return centreVertically(centred, size);
+    return centreComposition(centred, size);
   }, [
     overview,
     nodes,
@@ -244,6 +245,7 @@ function MapWorkspaceInner({
     nodeById,
     labValues.ringGap,
     labValues.squash,
+    labValues.arrangement,
   ]);
 
   const [targets, setTargets] = useState<Map<string, Point>>(() => new Map());
