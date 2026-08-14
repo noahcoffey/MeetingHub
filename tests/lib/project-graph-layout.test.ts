@@ -158,8 +158,8 @@ describe("project graph layout", () => {
     expect(p.get("loose2")!.y).toBeGreaterThan(Math.max(...clusterYs));
   });
 
-  // The point of the scatter: a golden-angle spiral never lines items up, which
-  // is the whole complaint with the packed rows.
+  // The point of the scatter: a golden-angle spiral stops the board resolving
+  // into the rows and columns that were the complaint about the packed grid.
   describe("scatter arrangement", () => {
     const LOOSE = Array.from({ length: 12 }, (_, i) => node(`loose${i}`));
     const nodes = [...NODES, ...LOOSE];
@@ -170,14 +170,37 @@ describe("project graph layout", () => {
       for (const n of nodes) expect(Number.isFinite(p.get(n.id)!.x)).toBe(true);
     });
 
+    // A heuristic, deliberately: the golden angle guarantees each item its own
+    // direction out from the centre, not that no two ever share a coordinate.
+    // What it rules out is the *systematic* alignment of a grid, and these
+    // thresholds are far outside what the packed rows could produce — there,
+    // twelve loose projects shared a handful of x values and two or three y.
     it("does not line the loose projects up into rows or columns", () => {
       const p = layoutOverview(nodes, EDGES, SIZE);
       const pts = LOOSE.map((n) => p.get(n.id)!);
-      // In the old grid these shared a handful of x values and 2-3 y values.
-      const xs = new Set(pts.map((q) => Math.round(q.x / 8)));
-      const ys = new Set(pts.map((q) => Math.round(q.y / 8)));
+      const BUCKET = 8; // px; coordinates within this count as aligned
+      const xs = new Set(pts.map((q) => Math.round(q.x / BUCKET)));
+      const ys = new Set(pts.map((q) => Math.round(q.y / BUCKET)));
       expect(xs.size).toBeGreaterThan(pts.length * 0.75);
       expect(ys.size).toBeGreaterThan(pts.length * 0.75);
+    });
+
+    // The guard that actually is absolute: no overlap, even when one enormous
+    // constellation and a crowd of singletons pushes the stepping loop past its
+    // bound and onto the provably-clear fallback radius.
+    it("keeps bubbles clear even when one component dwarfs the rest", () => {
+      const bigIds = Array.from({ length: 40 }, (_, i) => node(`big${i}`));
+      const spokes = bigIds.slice(1).map((n) => edge("big0", n.id));
+      const crowd = Array.from({ length: 25 }, (_, i) => node(`tiny${i}`));
+      const p = layoutOverview([...bigIds, ...crowd], spokes, SIZE);
+      expect(p.size).toBe(bigIds.length + crowd.length);
+      const pts = [...p.values()];
+      for (const q of pts) expect(Number.isFinite(q.x) && Number.isFinite(q.y)).toBe(true);
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          expect(dist(pts[i], pts[j])).toBeGreaterThan(80);
+        }
+      }
     });
 
     it("keeps bubbles clear of each other", () => {

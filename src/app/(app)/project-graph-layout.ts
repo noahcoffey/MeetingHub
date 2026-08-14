@@ -114,12 +114,18 @@ export type Arrangement =
 
 export type LayoutOptions = Spacing & { arrangement?: Arrangement };
 
-// Half a bubble plus a little air, used to keep placed items off each other.
+// Bubble geometry the spacing is derived from (`--pg-size` in globals.css).
+const NODE_DIAMETER = 126;
 const NODE_HALF = 66;
+// Arc length one sibling needs on its ring: a bubble plus a little air.
+const MIN_SIBLING_PITCH = NODE_DIAMETER + 22;
 const ITEM_GAP = 26;
 
-// 137.5° — consecutive items on a spiral at this angle never fall into rows,
-// columns or spokes, which is exactly what a grid does wrong. Same maths a
+// ~137.5°, the golden angle. Because it is irrational with respect to a full
+// turn, no two items ever share a spoke out from the centre, and the sequence
+// of directions never repeats — so the regular rows and columns of a grid don't
+// form. It is a strong tendency, not a proof about screen coordinates: two
+// items on different spokes can still happen to share an x or a y. Same maths a
 // sunflower head uses to pack seeds without lining any of them up.
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
@@ -180,7 +186,6 @@ export function radialTree(
 
   const angle = new Map<string, number>([[rootId, -Math.PI / 2]]);
   const wedge = new Map<string, number>([[rootId, Math.PI * 2]]);
-  const points = new Map<string, Point>([[rootId, { x: 0, y: 0 }]]);
 
   for (const id of order) {
     const kids = children.get(id) ?? [];
@@ -194,13 +199,35 @@ export function radialTree(
     let cursor = base;
     for (const k of kids) {
       const share = (span * (weight.get(k) ?? 1)) / total;
-      const a = cursor + share / 2;
-      cursor += share;
-      angle.set(k, a);
+      angle.set(k, cursor + share / 2);
       wedge.set(k, share);
-      const r = (depth.get(k) ?? 1) * ringGap;
-      points.set(k, { x: Math.cos(a) * r, y: Math.sin(a) * r * squash });
+      cursor += share;
     }
+  }
+
+  // Ring radius per depth. A fixed `depth * ringGap` crams a busy ring: a
+  // project with thirty direct relations gives each of them a sliver of angle,
+  // and at a fixed radius the bubbles overlap. Arc length is wedge × radius, so
+  // push the ring out until the thinnest wedge on it is worth a whole bubble.
+  // Rings stay monotonic so a child never lands inside its parent's ring.
+  const maxDepth = Math.max(...[...depth.values()], 0);
+  const radiusAt: number[] = [0];
+  for (let d = 1; d <= maxDepth; d++) {
+    const onRing = order.filter((id) => depth.get(id) === d);
+    const thinnest = onRing.reduce(
+      (min, id) => Math.min(min, wedge.get(id) ?? Math.PI * 2),
+      Math.PI * 2,
+    );
+    const needed = thinnest > 0 ? MIN_SIBLING_PITCH / thinnest : 0;
+    radiusAt[d] = Math.max(d * ringGap, needed, radiusAt[d - 1] + ringGap * 0.6);
+  }
+
+  const points = new Map<string, Point>([[rootId, { x: 0, y: 0 }]]);
+  for (const id of order) {
+    if (id === rootId) continue;
+    const a = angle.get(id) ?? 0;
+    const r = radiusAt[depth.get(id) ?? 1] ?? ringGap;
+    points.set(id, { x: Math.cos(a) * r, y: Math.sin(a) * r * squash });
   }
 
   let halfW = 0;
@@ -220,9 +247,9 @@ function extentOf(item: Placed): number {
 }
 
 // Golden-angle scatter. Each component (a lone project is just a component of
-// one) goes on a phyllotaxis spiral: turn 137.5° and step out by √i. Because
-// that angle is irrational with respect to a full turn, no two items ever share
-// a row, a column or a spoke — which is the whole complaint with a grid.
+// one) goes on a phyllotaxis spiral: turn ~137.5° and step out by √i. Every item
+// gets its own direction out from the centre and the sequence never repeats, so
+// the board stops resolving into the rows and columns that were the complaint.
 // Busiest constellations sort first so they land near the middle and the loose
 // projects drift outward.
 //
@@ -253,18 +280,36 @@ function arrangeScatter(
   const settled: { x: number; y: number; r: number }[] = [];
   sorted.forEach((item, i) => {
     const angle = i * GOLDEN_ANGLE;
+    const at = (radius: number) => ({
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius * squashY,
+    });
+    const clashes = (p: Point) =>
+      settled.some((s) => Math.hypot(s.x - p.x, s.y - p.y) < s.r + radii[i]);
+
     let r = step * Math.sqrt(i);
-    let x = Math.cos(angle) * r;
-    let y = Math.sin(angle) * r * squashY;
-    for (let guard = 0; guard < 400; guard++) {
-      const clashes = settled.some(
-        (p) => Math.hypot(p.x - x, p.y - y) < p.r + radii[i],
-      );
-      if (!clashes) break;
+    let point = at(r);
+    // Creep outward in small steps first, which keeps the packing tight.
+    for (let guard = 0; guard < 400 && clashes(point); guard++) {
       r += step * 0.12;
-      x = Math.cos(angle) * r;
-      y = Math.sin(angle) * r * squashY;
+      point = at(r);
     }
+    if (clashes(point)) {
+      // Stepping can run out on a pathological graph — one enormous
+      // constellation and a crowd of singletons makes `step` far smaller than
+      // the big tree's extent. Rather than place an overlapping bubble, jump
+      // straight to a radius that provably clears everything: past the furthest
+      // settled centre plus both radii. Dividing by the squash accounts for the
+      // flattened spiral, where the shortest distance from the origin is
+      // `r * squashY`.
+      const reach = settled.reduce(
+        (max, s) => Math.max(max, Math.hypot(s.x, s.y) + s.r),
+        0,
+      );
+      r = (reach + radii[i]) / squashY + 1;
+      point = at(r);
+    }
+    const { x, y } = point;
     settled.push({ x, y, r: radii[i] });
     for (const [id, p] of item.tree.points) {
       out.set(id, { x: x + p.x, y: y + p.y });
