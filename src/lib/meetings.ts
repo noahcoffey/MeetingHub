@@ -211,6 +211,8 @@ export async function saveMeetingNotes(
 
 // Upsert a calendar event keyed by calendar_event_id. Idempotent: re-importing
 // updates title/time/attendees but NEVER touches notes or notes_updated_at.
+// Exception: a user-renamed title (title_edited_at set) is pinned — re-import
+// keeps the rename and only refreshes the other fields.
 export type CalendarUpsert = {
   calendarEventId: string;
   title: string;
@@ -243,7 +245,8 @@ export async function upsertCalendarMeetings(
     .onConflictDoUpdate({
       target: [meetings.workspaceId, meetings.calendarEventId],
       set: {
-        title: sql`excluded.title`,
+        // A user-renamed title (title_edited_at set) is pinned: re-import keeps it.
+        title: sql`CASE WHEN ${meetings.titleEditedAt} IS NOT NULL THEN ${meetings.title} ELSE excluded.title END`,
         description: sql`excluded.description`,
         startTime: sql`excluded.start_time`,
         endTime: sql`excluded.end_time`,
@@ -278,7 +281,13 @@ export async function updateMeetingMeta(
   },
 ): Promise<Meeting | undefined> {
   const set: Partial<NewMeeting> = { updatedAt: new Date() };
-  if (input.title !== undefined) set.title = input.title;
+  if (input.title !== undefined) {
+    set.title = input.title;
+    // Pin the title against ICS re-import — but only on a real change, so a
+    // client round-tripping an unchanged title doesn't detach the meeting
+    // from its feed.
+    set.titleEditedAt = sql`CASE WHEN ${meetings.title} <> ${input.title} THEN now() ELSE ${meetings.titleEditedAt} END` as unknown as Date;
+  }
   if (input.startTime !== undefined) set.startTime = input.startTime;
   if (input.endTime !== undefined) set.endTime = input.endTime;
   if (input.projectId !== undefined) set.projectId = input.projectId;
