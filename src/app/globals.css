@@ -2927,6 +2927,45 @@ input[type="checkbox"]:focus-visible {
   font-weight: 600;
   letter-spacing: -0.02em;
 }
+/* Inline meeting rename: the h1 wraps either wrapping display text (a button,
+   so it stays keyboard-reachable) or, while editing, an input — both styled to
+   read as the heading. */
+.meeting-title-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.meeting-title-display {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: text;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.meeting-title-input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  letter-spacing: inherit;
+}
+.meeting-title-input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
 
 /* ============ action items list (rail + tasks page) ============ */
 .ai-list {

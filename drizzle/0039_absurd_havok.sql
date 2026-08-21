@@ -1,0 +1,1 @@
+ALTER TABLE "meetings" ADD COLUMN "title_edited_at" timestamp with time zone;

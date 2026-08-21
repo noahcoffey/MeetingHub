@@ -514,6 +514,8 @@ export const meetings = pgTable(
     // the same feed subscribed in two workspaces yields the same iCal UIDs.
     calendarEventId: text("calendar_event_id"),
     title: text("title").notNull(),
+    // Set when the user renames the meeting; a pinned title survives ICS re-import.
+    titleEditedAt: timestamp("title_edited_at", { withTimezone: true }),
     // Calendar event description/body (markdown or plain text). Read-only metadata.
     description: text("description"),
     startTime: timestamp("start_time", { withTimezone: true }).notNull(),

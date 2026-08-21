@@ -26,6 +26,7 @@ import { ActionItemsList } from "../../action-items-list";
 import { MeetingRail } from "./meeting-rail";
 import { RailResizeHandle, RailToggle } from "../../chrome";
 import { MeetingProjectPicker } from "./meeting-project-picker";
+import { MeetingTitle } from "./meeting-title";
 import { RelatedProjectsRail } from "./related-projects-rail";
 import { listRelationsForProject } from "@/lib/project-relations";
 import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
@@ -113,7 +114,12 @@ export default async function MeetingDetailPage({
               </div>
               <header className="detail-header">
                 <div className="detail-title-row">
-                  <h1 className="page-title">{meeting.title}</h1>
+                  <h1 className="page-title meeting-title-heading">
+                    <MeetingTitle
+                      meetingId={meeting.id}
+                      initialTitle={meeting.title}
+                    />
+                  </h1>
                   <div className="detail-title-actions">
                     <MeetingProjectPicker
                       meetingId={meeting.id}
