@@ -9,7 +9,7 @@ import { safeCallbackUrl } from "@/lib/safe-redirect";
 
 type Panel = "passkey" | "password" | "recovery";
 
-export function LoginForm() {
+export function LoginForm({ passwordEnabled }: { passwordEnabled: boolean }) {
   const params = useSearchParams();
   // Only same-origin relative paths — never an off-site redirect (phishing guard).
   const callbackUrl = safeCallbackUrl(params.get("callbackUrl"));
@@ -77,14 +77,18 @@ export function LoginForm() {
             </p>
           )}
           <div className="login-alts">
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => setPanel("password")}
-            >
-              Use password
-            </button>
-            <span aria-hidden>·</span>
+            {passwordEnabled && (
+              <>
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => setPanel("password")}
+                >
+                  Use password
+                </button>
+                <span aria-hidden>·</span>
+              </>
+            )}
             <button
               type="button"
               className="link-btn"
@@ -96,7 +100,7 @@ export function LoginForm() {
         </>
       )}
 
-      {panel === "password" && (
+      {panel === "password" && passwordEnabled && (
         <form action={pwAction} className="login-form">
           <label>
             Password
