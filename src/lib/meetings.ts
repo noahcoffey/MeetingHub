@@ -301,3 +301,82 @@ export async function updateMeetingMeta(
     .returning();
   return m;
 }
+
+// Skipped occurrences on the given day that arrived with generated (Notes+)
+// notes — the ingest pushed to a meeting the user had already skipped. Surfaces
+// at the bottom of the day view so those notes can be restored or moved.
+export async function listSkippedWithGeneratedForDate(
+  workspaceId: string,
+  dateStr: string,
+): Promise<Pick<Meeting, "id" | "title" | "startTime">[]> {
+  return db
+    .select({
+      id: meetings.id,
+      title: meetings.title,
+      startTime: meetings.startTime,
+    })
+    .from(meetings)
+    .where(
+      sql`${meetings.workspaceId} = ${workspaceId}
+        AND (${meetings.startTime} AT TIME ZONE ${APP_TIMEZONE})::date = ${dateStr}::date
+        AND ${meetings.skipped} = true
+        AND length(trim(coalesce(${meetings.notesGenerated}, ''))) > 0`,
+    )
+    .orderBy(asc(meetings.startTime));
+}
+
+export type MoveGeneratedNotesResult =
+  | { ok: true }
+  | { ok: false; reason: "not-found" | "same-meeting" | "cross-workspace" | "empty-source" | "target-occupied" };
+
+// Move a meeting's generated notes onto another meeting. `external_ref` travels
+// with them: it's the ingest re-match key, so leaving it behind would send the
+// next push for the same sourceId back to the meeting the notes just left.
+export async function moveGeneratedNotes(
+  fromId: string,
+  toId: string,
+): Promise<MoveGeneratedNotesResult> {
+  if (fromId === toId) return { ok: false, reason: "same-meeting" };
+  const [from, to] = await Promise.all([getMeeting(fromId), getMeeting(toId)]);
+  if (!from || !to) return { ok: false, reason: "not-found" };
+  if (from.workspaceId !== to.workspaceId) {
+    return { ok: false, reason: "cross-workspace" };
+  }
+  const body = (from.notesGenerated ?? "").trim();
+  if (body.length === 0) return { ok: false, reason: "empty-source" };
+  if ((to.notesGenerated ?? "").trim().length > 0) {
+    return { ok: false, reason: "target-occupied" };
+  }
+
+  const now = new Date();
+  // The ingest matches on external_ref OR calendar_event_id. A direct calendar
+  // match (the usual way notes strand on a skipped meeting) leaves external_ref
+  // null, so fall back to the source's calendar UID — otherwise the next push
+  // for the same sourceId re-matches the source and strands all over again.
+  // Never clear a ref the target already carries.
+  const ref = from.externalRef ?? from.calendarEventId ?? to.externalRef;
+  // The source keeps its calendar_event_id, so both rows can match a later
+  // push; ingest breaks that tie on updated_at, so the target must be newer.
+  const targetNow = new Date(now.getTime() + 1);
+  await db.transaction(async (tx) => {
+    await tx
+      .update(meetings)
+      .set({
+        notesGenerated: from.notesGenerated,
+        notesGeneratedUpdatedAt: targetNow,
+        externalRef: ref,
+        updatedAt: targetNow,
+      })
+      .where(eq(meetings.id, toId));
+    await tx
+      .update(meetings)
+      .set({
+        notesGenerated: null,
+        notesGeneratedUpdatedAt: null,
+        externalRef: null,
+        updatedAt: now,
+      })
+      .where(eq(meetings.id, fromId));
+  });
+  return { ok: true };
+}

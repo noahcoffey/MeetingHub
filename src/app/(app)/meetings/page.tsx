@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getMeetingsForDate, getMeetingsInRange } from "@/lib/meetings";
+import {
+  getMeetingsForDate,
+  getMeetingsInRange,
+  listSkippedWithGeneratedForDate,
+} from "@/lib/meetings";
 import { listOpenActionItems } from "@/lib/action-items";
 import { listProjects } from "@/lib/projects";
 import { getHideGeneratedNotes } from "@/lib/app-settings";
@@ -22,6 +26,10 @@ import { NewMeetingForm } from "../new-meeting-form";
 import { ImportCalendarButton } from "../import-calendar-button";
 import { MeetingList } from "../meeting-list";
 import { DayTasks, type DayTask } from "../day-tasks";
+import {
+  SkippedNotesBanner,
+  type SkippedNotesRow,
+} from "../skipped-notes-banner";
 import { MarkdownView } from "./[id]/markdown-view";
 
 export const dynamic = "force-dynamic";
@@ -48,11 +56,28 @@ export default async function MeetingsPage({
     getHideGeneratedNotes(),
   ]);
   let meetings: Awaited<ReturnType<typeof getMeetingsForDate>> = [];
+  // Skipped occurrences that nonetheless received generated notes — they'd be
+  // invisible otherwise. Never fetched when the advanced setting hides Notes+.
+  let skipped: Awaited<ReturnType<typeof listSkippedWithGeneratedForDate>> = [];
   if (!isMonth) {
-    meetings = await getMeetingsForDate(workspaceId, date);
+    [meetings, skipped] = await Promise.all([
+      getMeetingsForDate(workspaceId, date),
+      hideGenerated || isNotes
+        ? Promise.resolve([])
+        : listSkippedWithGeneratedForDate(workspaceId, date),
+    ]);
     // Auto mode with an empty day → month view, so sparse workspaces (a
     // a club that meets twice a month) land somewhere useful by default.
-    if (!explicitDay && !isNotes && meetings.length === 0) isMonth = true;
+    // A day whose only content is stranded Notes+ stays on the day view so
+    // that prompt is reachable.
+    if (
+      !explicitDay &&
+      !isNotes &&
+      meetings.length === 0 &&
+      skipped.length === 0
+    ) {
+      isMonth = true;
+    }
   }
   // Month view: the whole calendar month containing `date`, grouped by day.
   const monthStart = shiftMonth(date, 0);
@@ -60,6 +85,15 @@ export default async function MeetingsPage({
   const monthMeetings = isMonth
     ? await getMeetingsInRange(workspaceId, monthStart, monthEnd)
     : [];
+  const skippedWithNotes: SkippedNotesRow[] = isMonth
+    ? []
+    : skipped.map((m) => ({
+        id: m.id,
+        title: m.title,
+        time: formatTimeInTz(new Date(m.startTime)),
+        date,
+      }));
+
   const today = todayInAppTz();
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
 
@@ -243,6 +277,8 @@ export default async function MeetingsPage({
           />
 
           <DayTasks date={date} items={dayTasks} />
+
+          <SkippedNotesBanner initial={skippedWithNotes} />
         </>
       )}
     </div>
