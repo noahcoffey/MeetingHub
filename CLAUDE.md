@@ -365,7 +365,14 @@ match ties toward that workspace and pre-tags unmatched pushes (`pending_ingests
 set-null FK; raw hint kept in `workspace_hint` for display). Review: match-to-meeting inherits the
 meeting's workspace (the picker lists the tagged workspace's meetings via `/api/meetings?workspace=`),
 create-new uses the tag, falling back to the active workspace for untagged items. The Incoming
-inbox/badge stays global. Generated notes render in a collapsible, editable section below the meeting notes. Full
+inbox/badge stays global. If a push lands on a meeting that was **skipped**, the day view surfaces it below the day's list
+(`(app)/skipped-notes-banner.tsx`, fed by `listSkippedWithGeneratedForDate`) offering Restore
+(the existing skip DELETE) or Move — `POST /api/meetings/[id]/move-notes` → `moveGeneratedNotes`,
+which moves `notes_generated` in one transaction and points the ingest's re-match keys at the
+target (`external_ref` ← the source's ref, falling back to its `calendar_event_id`; the target is
+stamped a millisecond newer so it wins ingest's `updated_at` tie-break), refusing cross-workspace
+targets or a target that already has generated notes. A day whose only content is such a meeting stays on the day view instead of auto-flipping to
+month. Generated notes render in a collapsible, editable section below the meeting notes. Full
 contract for the client side: `INGEST_API.md`.
 
 ## MCP connector

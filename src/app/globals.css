@@ -7794,3 +7794,39 @@ html {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+
+/* ---- skipped meeting that received Notes+ (bottom of the day view) ---- */
+.skipped-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+.skipped-notes-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.skipped-notes-text {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.skipped-notes-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+.skipped-notes-row .incoming-match {
+  flex-basis: 100%;
+}
+.skipped-notes-error {
+  font-size: 0.78rem;
+  color: var(--danger);
+}
