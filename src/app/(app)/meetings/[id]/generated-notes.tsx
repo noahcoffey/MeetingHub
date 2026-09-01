@@ -10,9 +10,12 @@ import { useAddActionItem } from "../../use-add-action-item";
 export function GeneratedNotesEditor({
   meetingId,
   initial,
+  onStateChange,
 }: {
   meetingId: string;
   initial: string;
+  // Lets the header know when it's safe to move the notes elsewhere.
+  onStateChange?: (state: SaveState) => void;
 }) {
   const [status, setStatus] = useState<SaveState>("saved");
   const report = useSaveReport();
@@ -23,8 +26,18 @@ export function GeneratedNotesEditor({
 
   useEffect(() => {
     report("generated", status);
-  }, [status, report]);
-  useEffect(() => () => report("generated", "saved"), [report]);
+    onStateChange?.(status);
+  }, [status, report, onStateChange]);
+  // On unmount: reset the indicator and drop any pending debounced save. The
+  // move flow navigates away right after the notes leave this meeting; a timer
+  // firing after that would PATCH the edited body straight back onto it.
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+      report("generated", "saved");
+    },
+    [report],
+  );
 
   async function save() {
     setStatus("saving");

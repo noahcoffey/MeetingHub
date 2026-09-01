@@ -372,7 +372,10 @@ which moves `notes_generated` in one transaction and points the ingest's re-matc
 target (`external_ref` ← the source's ref, falling back to its `calendar_event_id`; the target is
 stamped a millisecond newer so it wins ingest's `updated_at` tie-break), refusing cross-workspace
 targets or a target that already has generated notes. A day whose only content is such a meeting stays on the day view instead of auto-flipping to
-month. Generated notes render in a collapsible, editable section below the meeting notes. Full
+month. Generated notes render in a collapsible, editable section below the meeting notes; its
+header carries the same **Move…** (shared `(app)/move-notes-picker.tsx`, seeded to the meeting's
+day, excludes the source, disabled while an autosave is pending) for the case where the recorder
+filed Notes+ under the wrong meeting — on success it navigates to the target. Full
 contract for the client side: `INGEST_API.md`.
 
 ## MCP connector

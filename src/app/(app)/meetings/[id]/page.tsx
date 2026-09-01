@@ -152,6 +152,7 @@ export default async function MeetingDetailPage({
           </div>
           <NotesStack
             meetingId={meeting.id}
+            date={dateStr}
             initialNotes={meeting.notes}
             initialNotesUpdatedAt={new Date(meeting.notesUpdatedAt).toISOString()}
             generated={hideGenerated ? null : meeting.notesGenerated}

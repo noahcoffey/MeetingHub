@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { NotesEditor } from "./notes-editor";
 import { GeneratedNotesEditor } from "./generated-notes";
+import { MoveNotesPicker } from "../../move-notes-picker";
+import type { SaveState } from "../../save-status";
 import { useAddActionItem } from "../../use-add-action-item";
 
 const SPLIT_KEY = "mh:notes-split";
@@ -103,17 +106,21 @@ function Chevron({ open }: { open: boolean }) {
 // Editors stay mounted when collapsed (state preserved).
 export function NotesStack({
   meetingId,
+  date,
   initialNotes,
   initialNotesUpdatedAt,
   generated,
   highlight,
 }: {
   meetingId: string;
+  // The meeting's own day (app tz, YYYY-MM-DD) — seeds the move picker.
+  date: string;
   initialNotes: string;
   initialNotesUpdatedAt: string;
   generated: string | null;
   highlight?: string;
 }) {
+  const router = useRouter();
   const hasGenerated = generated !== null;
 
   // When arriving from search, auto-expand a section whose content matches.
@@ -125,6 +132,11 @@ export function NotesStack({
 
   const [notesOpen, setNotesOpen] = useState(true);
   const [genOpen, setGenOpen] = useState(hasGenerated && matches(generated));
+  // "Move…" on the Generated header: the recorder sometimes files Notes+ under
+  // the wrong meeting. The picker won't fire while an autosave is pending, or
+  // the debounced PATCH could land the edited body back on this meeting.
+  const [moving, setMoving] = useState(false);
+  const [genState, setGenState] = useState<SaveState>("saved");
   const addActionItem = useAddActionItem({ meetingId });
 
   const stackRef = useRef<HTMLDivElement>(null);
@@ -189,20 +201,47 @@ export function NotesStack({
           className={`nsec ${genOpen ? "open" : "collapsed"}`}
           style={bothOpen ? { flexGrow: 1 - split } : undefined}
         >
-          <button
-            type="button"
-            className="nsec-head"
-            onClick={() => setGenOpen((o) => !o)}
-            aria-expanded={genOpen}
-          >
-            <div className="notes-col nsec-head-inner">
-              <Chevron open={genOpen} />
-              <span>Generated notes</span>
-            </div>
-          </button>
+          <div className="nsec-head-row">
+            <button
+              type="button"
+              className="nsec-head"
+              onClick={() => setGenOpen((o) => !o)}
+              aria-expanded={genOpen}
+            >
+              <div className="notes-col nsec-head-inner">
+                <Chevron open={genOpen} />
+                <span>Generated notes</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              className="ghost-btn nsec-head-action"
+              aria-expanded={moving}
+              title="Move these generated notes to another meeting"
+              onClick={() => {
+                const next = !moving;
+                setMoving(next);
+                if (next) setGenOpen(true);
+              }}
+            >
+              Move…
+            </button>
+          </div>
           <div className="nsec-body">
             <div className="notes-col">
-              <GeneratedNotesEditor meetingId={meetingId} initial={generated} />
+              {moving && (
+                <MoveNotesPicker
+                  sourceMeetingId={meetingId}
+                  initialDate={date}
+                  disabled={genState !== "saved"}
+                  onMoved={(targetId) => router.push(`/meetings/${targetId}`)}
+                />
+              )}
+              <GeneratedNotesEditor
+                meetingId={meetingId}
+                initial={generated}
+                onStateChange={setGenState}
+              />
             </div>
           </div>
         </section>

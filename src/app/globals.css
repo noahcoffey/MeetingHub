@@ -2151,6 +2151,29 @@ input[type="checkbox"]:focus-visible {
   color: var(--muted);
   transition: color 0.12s ease;
 }
+/* header + a sibling action (Move…) — the toggle is itself a <button>, so the
+   action can't nest inside it */
+.nsec-head-row {
+  display: flex;
+  align-items: center;
+  padding-right: 2.5rem;
+}
+.nsec-head-row .nsec-head {
+  flex: 1;
+  min-width: 0;
+}
+.nsec-head-action {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.76rem;
+}
+.nsec .move-notes-picker {
+  margin: 0 0 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
 .nsec-body {
   flex: 1;
   min-height: 0;
@@ -2347,6 +2370,9 @@ input[type="checkbox"]:focus-visible {
   }
   .nsec-head {
     padding: 0.8rem 1rem;
+  }
+  .nsec-head-row {
+    padding-right: 1rem;
   }
   .nsec-body {
     overflow: visible;
