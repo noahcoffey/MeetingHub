@@ -11,11 +11,15 @@ export function GeneratedNotesEditor({
   meetingId,
   initial,
   onStateChange,
+  locked = false,
 }: {
   meetingId: string;
   initial: string;
   // Lets the header know when it's safe to move the notes elsewhere.
   onStateChange?: (state: SaveState) => void;
+  // Read-only while a move of these notes is in flight — an edit typed then
+  // would be neither saved here nor carried to the target.
+  locked?: boolean;
 }) {
   const [status, setStatus] = useState<SaveState>("saved");
   const report = useSaveReport();
@@ -70,6 +74,7 @@ export function GeneratedNotesEditor({
         initialMarkdown={initial}
         onChange={onChange}
         onAddActionItem={addActionItem}
+        editable={!locked}
       />
     </div>
   );

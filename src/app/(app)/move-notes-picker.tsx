@@ -11,6 +11,7 @@ export function MoveNotesPicker({
   sourceMeetingId,
   initialDate,
   disabled = false,
+  onBusyChange,
   onMoved,
 }: {
   sourceMeetingId: string;
@@ -18,6 +19,9 @@ export function MoveNotesPicker({
   initialDate: string;
   // e.g. while an autosave of the notes is still in flight.
   disabled?: boolean;
+  // Fires true when the move POST starts and false if it fails; stays true on
+  // success so the caller can keep the source locked until it navigates away.
+  onBusyChange?: (busy: boolean) => void;
   onMoved: (targetMeetingId: string) => void;
 }) {
   const [date, setDate] = useState(initialDate);
@@ -32,8 +36,15 @@ export function MoveNotesPicker({
     let cancelled = false;
     setLoading(true);
     setSelected("");
+    // Drop the previous day's list so a stale target can't be picked while
+    // the new one loads.
+    setMeetings([]);
+    setError(null);
     fetch(`/api/meetings?date=${date}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         if (cancelled) return;
         setMeetings(
@@ -50,7 +61,7 @@ export function MoveNotesPicker({
         );
       })
       .catch(() => {
-        if (!cancelled) setMeetings([]);
+        if (!cancelled) setError("Couldn’t load that day’s meetings.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,6 +75,7 @@ export function MoveNotesPicker({
     if (!selected || busy) return;
     setError(null);
     setBusy(true);
+    onBusyChange?.(true);
     try {
       const res = await fetch(`/api/meetings/${sourceMeetingId}/move-notes`, {
         method: "POST",
@@ -77,11 +89,13 @@ export function MoveNotesPicker({
             ? "That meeting already has generated notes."
             : "Couldn’t move the notes.",
         );
+        onBusyChange?.(false);
         return;
       }
       onMoved(selected);
     } catch {
       setError("Couldn’t move the notes.");
+      onBusyChange?.(false);
     } finally {
       setBusy(false);
     }

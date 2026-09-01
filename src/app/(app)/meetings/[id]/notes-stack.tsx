@@ -137,6 +137,9 @@ export function NotesStack({
   // the debounced PATCH could land the edited body back on this meeting.
   const [moving, setMoving] = useState(false);
   const [genState, setGenState] = useState<SaveState>("saved");
+  // True from the move POST until navigation (or failure); the editor is
+  // locked meanwhile so nothing typed can fall between the two meetings.
+  const [moveBusy, setMoveBusy] = useState(false);
   const addActionItem = useAddActionItem({ meetingId });
 
   const stackRef = useRef<HTMLDivElement>(null);
@@ -234,6 +237,7 @@ export function NotesStack({
                   sourceMeetingId={meetingId}
                   initialDate={date}
                   disabled={genState !== "saved"}
+                  onBusyChange={setMoveBusy}
                   onMoved={(targetId) => router.push(`/meetings/${targetId}`)}
                 />
               )}
@@ -241,6 +245,7 @@ export function NotesStack({
                 meetingId={meetingId}
                 initial={generated}
                 onStateChange={setGenState}
+                locked={moveBusy}
               />
             </div>
           </div>
