@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { MoveNotesPicker } from "./move-notes-picker";
 
 export type SkippedNotesRow = {
   id: string;
@@ -40,35 +41,6 @@ function SkippedNotesItem({
 }) {
   const router = useRouter();
   const [moving, setMoving] = useState(false);
-  const [date, setDate] = useState(row.date);
-  const [meetings, setMeetings] = useState<{ id: string; label: string }[]>([]);
-  const [selected, setSelected] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function loadMeetings(d: string) {
-    setLoading(true);
-    setSelected("");
-    try {
-      const res = await fetch(`/api/meetings?date=${d}`);
-      const data = await res.json();
-      setMeetings(
-        (data.meetings ?? []).map(
-          (m: { id: string; title: string; startTime: string }) => ({
-            id: m.id,
-            label: `${new Date(m.startTime).toLocaleTimeString([], {
-              hour: "numeric",
-              minute: "2-digit",
-            })} — ${m.title}`,
-          }),
-        ),
-      );
-    } catch {
-      setMeetings([]);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function restore() {
     onDone(row.id);
@@ -76,31 +48,6 @@ function SkippedNotesItem({
       await fetch(`/api/meetings/${row.id}/skip`, { method: "DELETE" });
     } finally {
       router.refresh();
-    }
-  }
-
-  async function move() {
-    if (!selected) return;
-    setError(null);
-    try {
-      const res = await fetch(`/api/meetings/${row.id}/move-notes`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetMeetingId: selected }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(
-          data.error === "target-occupied"
-            ? "That meeting already has generated notes."
-            : "Couldn’t move the notes.",
-        );
-        return;
-      }
-      onDone(row.id);
-      router.refresh();
-    } catch {
-      setError("Couldn’t move the notes.");
     }
   }
 
@@ -119,45 +66,21 @@ function SkippedNotesItem({
         <button
           type="button"
           className="ghost-btn"
-          onClick={() => {
-            const next = !moving;
-            setMoving(next);
-            if (next) loadMeetings(date);
-          }}
+          aria-expanded={moving}
+          onClick={() => setMoving((m) => !m)}
         >
           Move…
         </button>
       </div>
       {moving && (
-        <div className="incoming-match">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              if (e.target.value) loadMeetings(e.target.value);
-            }}
-          />
-          <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-            <option value="">
-              {loading ? "Loading…" : "Select a meeting…"}
-            </option>
-            {meetings.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="primary-btn"
-            disabled={!selected}
-            onClick={move}
-          >
-            Move notes
-          </button>
-          {error && <span className="skipped-notes-error">{error}</span>}
-        </div>
+        <MoveNotesPicker
+          sourceMeetingId={row.id}
+          initialDate={row.date}
+          onMoved={() => {
+            onDone(row.id);
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

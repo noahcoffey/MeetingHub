@@ -33,8 +33,13 @@ export const MarkdownEditor = forwardRef<
     initialMarkdown: string;
     onChange: (markdown: string) => void;
     onAddActionItem?: (text: string) => void;
+    // Flip off to lock the editor (e.g. while its content is being moved).
+    editable?: boolean;
   }
->(function MarkdownEditor({ initialMarkdown, onChange, onAddActionItem }, ref) {
+>(function MarkdownEditor(
+  { initialMarkdown, onChange, onAddActionItem, editable = true },
+  ref,
+) {
   const [sel, setSel] = useState<Selection | null>(null);
 
   const editor = useEditor({
@@ -84,6 +89,11 @@ export const MarkdownEditor = forwardRef<
   });
 
   // Hide the toolbar on scroll/resize since it's positioned to the viewport.
+  useEffect(() => {
+    // emitUpdate=false: toggling must not look like a content edit upstream.
+    editor?.setEditable(editable, false);
+  }, [editor, editable]);
+
   useEffect(() => {
     if (!sel) return;
     const hide = () => setSel(null);
