@@ -28,7 +28,7 @@
     "@tiptap/pm": "^3.29.2",
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.30.2",
-    "@xyflow/react": "^12.11.3",
+    "@xyflow/react": "^12.11.6",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "ical-expander": "^3.2.0",
