@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { NotesEditor } from "./notes-editor";
 import { GeneratedNotesEditor } from "./generated-notes";
@@ -8,78 +8,7 @@ import { MoveNotesPicker } from "../../move-notes-picker";
 import type { SaveState } from "../../save-status";
 import { useAddActionItem } from "../../use-add-action-item";
 
-const SPLIT_KEY = "mh:notes-split";
-const SPLIT_DEFAULT = 0.5;
-const SPLIT_MIN = 0.15;
-const SPLIT_MAX = 0.85;
-
-function clampSplit(f: number): number {
-  return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, f));
-}
-
-// Drag-resizable split between two stacked sections: the fraction of the
-// container height given to the first section. Persisted globally, so the
-// split carries across meetings.
-function useResizableSplit(containerRef: React.RefObject<HTMLDivElement | null>) {
-  const [split, setSplitState] = useState(SPLIT_DEFAULT);
-  const [dragging, setDragging] = useState(false);
-
-  // Read persisted split after mount (avoids SSR/hydration mismatch).
-  useEffect(() => {
-    const f = Number(localStorage.getItem(SPLIT_KEY));
-    if (Number.isFinite(f) && f > 0) setSplitState(clampSplit(f));
-  }, []);
-
-  function setSplit(f: number, opts?: { persist?: boolean }) {
-    const clamped = clampSplit(f);
-    setSplitState(clamped);
-    if (opts?.persist) {
-      try {
-        localStorage.setItem(SPLIT_KEY, String(clamped));
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  function onDividerPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.button !== 0) return;
-    e.preventDefault(); // no text selection while dragging
-    const height = containerRef.current?.getBoundingClientRect().height;
-    if (!height) return;
-    const startY = e.clientY;
-    const startSplit = split;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragging(true);
-
-    const onMove = (ev: PointerEvent) => {
-      setSplit(startSplit + (ev.clientY - startY) / height);
-    };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      setDragging(false);
-      setSplit(startSplit + (ev.clientY - startY) / height, { persist: true });
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  }
-
-  function onDividerKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "ArrowUp") setSplit(split - 0.05, { persist: true });
-    else if (e.key === "ArrowDown") setSplit(split + 0.05, { persist: true });
-    else return;
-    e.preventDefault();
-  }
-
-  function resetSplit() {
-    setSplit(SPLIT_DEFAULT, { persist: true });
-  }
-
-  return { split, dragging, onDividerPointerDown, onDividerKeyDown, resetSplit };
-}
+type OpenSection = "notes" | "generated" | null;
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -101,8 +30,8 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 // Two stacked, collapsible sections in the notes column: Notes over Generated
-// notes. Both open → drag-resizable split (persisted, shared across meetings);
-// one collapsed → the open one fills; collapsed sits snug as a header bar.
+// notes. A true accordion — at most one is open at a time, and the open one
+// fills the column; clicking the open header collapses it to a header bar.
 // Editors stay mounted when collapsed (state preserved).
 export function NotesStack({
   meetingId,
@@ -123,15 +52,20 @@ export function NotesStack({
   const router = useRouter();
   const hasGenerated = generated !== null;
 
-  // When arriving from search, auto-expand a section whose content matches.
+  // When arriving from search, open the section whose content matches — the
+  // user's own notes win a tie.
   const terms = (highlight?.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
     (t) => t.length >= 2,
   );
   const matches = (text: string | null) =>
     !!text && terms.some((t) => text.toLowerCase().includes(t));
 
-  const [notesOpen, setNotesOpen] = useState(true);
-  const [genOpen, setGenOpen] = useState(hasGenerated && matches(generated));
+  const [open, setOpen] = useState<OpenSection>(
+    matches(initialNotes) || !matches(generated) ? "notes" : "generated",
+  );
+  const toggle = (section: Exclude<OpenSection, null>) =>
+    setOpen((cur) => (cur === section ? null : section));
+
   // "Move…" on the Generated header: the recorder sometimes files Notes+ under
   // the wrong meeting. The picker won't fire while an autosave is pending, or
   // the debounced PATCH could land the edited body back on this meeting.
@@ -142,25 +76,16 @@ export function NotesStack({
   const [moveBusy, setMoveBusy] = useState(false);
   const addActionItem = useAddActionItem({ meetingId });
 
-  const stackRef = useRef<HTMLDivElement>(null);
-  const { split, dragging, onDividerPointerDown, onDividerKeyDown, resetSplit } =
-    useResizableSplit(stackRef);
-
-  // The proportional split only applies while both sections are open; with one
-  // collapsed the open section fills via the base CSS.
-  const bothOpen = hasGenerated && notesOpen && genOpen;
+  const notesOpen = open === "notes";
+  const genOpen = open === "generated";
 
   return (
-    <div className="notes-stack" ref={stackRef}>
-      <section
-        id="nsec-notes"
-        className={`nsec ${notesOpen ? "open" : "collapsed"}`}
-        style={bothOpen ? { flexGrow: split } : undefined}
-      >
+    <div className="notes-stack">
+      <section className={`nsec ${notesOpen ? "open" : "collapsed"}`}>
         <button
           type="button"
           className="nsec-head"
-          onClick={() => setNotesOpen((o) => !o)}
+          onClick={() => toggle("notes")}
           aria-expanded={notesOpen}
         >
           <div className="notes-col nsec-head-inner">
@@ -181,34 +106,13 @@ export function NotesStack({
         </div>
       </section>
 
-      {bothOpen && (
-        <div
-          className={`nsec-resize ${dragging ? "dragging" : ""}`}
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize notes split"
-          aria-controls="nsec-notes"
-          aria-valuemin={Math.round(SPLIT_MIN * 100)}
-          aria-valuemax={Math.round(SPLIT_MAX * 100)}
-          aria-valuenow={Math.round(split * 100)}
-          tabIndex={0}
-          title="Drag to resize · double-click to reset"
-          onPointerDown={onDividerPointerDown}
-          onDoubleClick={resetSplit}
-          onKeyDown={onDividerKeyDown}
-        />
-      )}
-
       {hasGenerated && (
-        <section
-          className={`nsec ${genOpen ? "open" : "collapsed"}`}
-          style={bothOpen ? { flexGrow: 1 - split } : undefined}
-        >
+        <section className={`nsec ${genOpen ? "open" : "collapsed"}`}>
           <div className="nsec-head-row">
             <button
               type="button"
               className="nsec-head"
-              onClick={() => setGenOpen((o) => !o)}
+              onClick={() => toggle("generated")}
               aria-expanded={genOpen}
             >
               <div className="notes-col nsec-head-inner">
@@ -224,7 +128,7 @@ export function NotesStack({
               onClick={() => {
                 const next = !moving;
                 setMoving(next);
-                if (next) setGenOpen(true);
+                if (next) setOpen("generated");
               }}
             >
               Move…
