@@ -2131,7 +2131,7 @@ input[type="checkbox"]:focus-visible {
 .nsec-head {
   display: block;
   width: 100%;
-  padding: 0.8rem 2.5rem;
+  padding: 0.8rem 2.5rem 0.5rem;
   background: transparent;
   border: none;
   text-align: left;
@@ -2154,16 +2154,13 @@ input[type="checkbox"]:focus-visible {
 /* header + a sibling action (Move…) — the toggle is itself a <button>, so the
    action can't nest inside it */
 .nsec-head-row {
-  display: flex;
-  align-items: center;
-  padding-right: 2.5rem;
-}
-.nsec-head-row .nsec-head {
-  flex: 1;
-  min-width: 0;
+  position: relative;
 }
 .nsec-head-action {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 50%;
+  right: 2.5rem;
+  transform: translateY(-50%);
   padding: 0.25rem 0.6rem;
   font-size: 0.76rem;
 }
@@ -2183,36 +2180,17 @@ input[type="checkbox"]:focus-visible {
 .nsec.collapsed .nsec-body {
   display: none;
 }
-/* drag strip straddling the border between the two open sections */
-.nsec-resize {
-  position: relative;
-  height: 8px;
-  margin: -4px 0;
-  flex: 0 0 auto;
-  z-index: 4;
-  cursor: row-resize;
-  touch-action: none;
-}
-.nsec-resize::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: transparent;
-  transition: background 0.12s ease;
-}
-.nsec-resize:hover::after,
-.nsec-resize:focus-visible::after,
-.nsec-resize.dragging::after {
-  background: var(--accent);
-}
-.nsec-resize:focus-visible {
-  outline: none;
-}
 .notes-stack .notes-prose {
   min-height: 8rem;
+}
+/* Inside the accordion the section header already separates the sections, so
+   the editor's own top inset — or a leading heading's top margin — would only
+   add dead space. */
+.notes-stack .notes-surface {
+  padding-top: 0;
+}
+.notes-stack .notes-prose > :first-child {
+  margin-top: 0;
 }
 .stack-editor {
   position: relative;
@@ -2369,18 +2347,14 @@ input[type="checkbox"]:focus-visible {
     flex: 0 0 auto;
   }
   .nsec-head {
-    padding: 0.8rem 1rem;
+    padding: 0.8rem 1rem 0.5rem;
   }
-  .nsec-head-row {
-    padding-right: 1rem;
+  .nsec-head-action {
+    right: 1rem;
   }
   .nsec-body {
     overflow: visible;
     padding: 0 1rem 2rem;
-  }
-  /* sections stack at natural height on mobile — nothing to resize */
-  .nsec-resize {
-    display: none;
   }
   .actions-rail {
     width: 100%;
@@ -2442,6 +2416,7 @@ input[type="checkbox"]:focus-visible {
 .notes-prose > * + * {
   margin-top: 0.75em;
 }
+
 
 /* markdown help — floating "?" affordance anchored to the notes pane corner.
    Absolutely positioned against .notes-pane (its nearest positioned ancestor),
