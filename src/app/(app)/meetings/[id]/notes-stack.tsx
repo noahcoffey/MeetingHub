@@ -8,7 +8,8 @@ import { MoveNotesPicker } from "../../move-notes-picker";
 import type { SaveState } from "../../save-status";
 import { useAddActionItem } from "../../use-add-action-item";
 
-type OpenSection = "notes" | "generated" | null;
+type Section = "notes" | "generated";
+type OpenSection = Section | null;
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -30,9 +31,11 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 // Two stacked, collapsible sections in the notes column: Notes over Generated
-// notes. A true accordion — at most one is open at a time, and the open one
-// fills the column; clicking the open header collapses it to a header bar.
-// Editors stay mounted when collapsed (state preserved).
+// notes. A true accordion — exactly one is open at a time and fills the column,
+// so collapsing the open one opens the other rather than leaving the column
+// empty. (With no generated notes there is no other section, and Notes simply
+// collapses to a header bar.) Editors stay mounted when collapsed (state
+// preserved).
 export function NotesStack({
   meetingId,
   date,
@@ -63,8 +66,14 @@ export function NotesStack({
   const [open, setOpen] = useState<OpenSection>(
     matches(initialNotes) || !matches(generated) ? "notes" : "generated",
   );
-  const toggle = (section: Exclude<OpenSection, null>) =>
-    setOpen((cur) => (cur === section ? null : section));
+  const toggle = (section: Section) =>
+    setOpen((cur) => {
+      if (cur !== section) return section;
+      // Clicking the open header hands the column to the other section; with
+      // nothing to hand it to, it just collapses.
+      if (!hasGenerated) return null;
+      return section === "notes" ? "generated" : "notes";
+    });
 
   // "Move…" on the Generated header: the recorder sometimes files Notes+ under
   // the wrong meeting. The picker won't fire while an autosave is pending, or
