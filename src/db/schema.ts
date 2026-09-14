@@ -863,6 +863,45 @@ export const weeklySummaries = pgTable(
   (t) => [unique().on(t.workspaceId, t.weekStart)],
 );
 
+// One AI-written synthesis per workspace per calendar day (app tz), built from
+// that day's meeting notes. Storage and serving only: like weekly_summaries,
+// generation happens OUTSIDE the app, in the local runner at tools/day-summary.
+export const daySummaries = pgTable(
+  "day_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    // The calendar day covered (YYYY-MM-DD in APP_TIMEZONE) — the same bucket
+    // the day view uses, so the summary always covers what the view shows.
+    day: date("day").notNull(),
+    // --- edits and regeneration are separate fields, deliberately. ---
+    // `markdown` is the runner's output and the ONLY field a re-push touches.
+    // `markdownEdited`, when set, is the user's hand-edited version and is what
+    // the view renders; a re-push never overwrites it, and "Reset to generated"
+    // clears it back to null. There is no DELETE endpoint in this API, so an
+    // overwrite would be unrecoverable.
+    markdown: text("markdown").notNull(),
+    markdownEdited: text("markdown_edited"),
+    model: text("model"), // reported by the runner; null if it didn't say
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    // sha256 over the day's noted meetings + their note timestamps, as they
+    // stood when the runner READ them — echoed back in the push, not recomputed
+    // on arrival (notes can land during the minutes the model is writing).
+    // Recomputed on day-view load and compared; a mismatch means the inputs
+    // moved and the summary is stale. Staleness is derived, never stored.
+    inputFingerprint: text("input_fingerprint").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [unique().on(t.workspaceId, t.day)],
+);
+
 // ---- inferred types ----
 export type OauthClient = typeof oauthClients.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
@@ -894,3 +933,4 @@ export type WebauthnCredential = typeof webauthnCredentials.$inferSelect;
 export type RecoveryCode = typeof recoveryCodes.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type WeeklySummary = typeof weeklySummaries.$inferSelect;
+export type DaySummary = typeof daySummaries.$inferSelect;

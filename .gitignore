@@ -43,3 +43,7 @@ yarn-error.log*
 # Sunday-Summary runner (tools/sunday-summary): local deps + secret config
 tools/sunday-summary/node_modules/
 tools/sunday-summary/config.json
+
+# Day-Summary runner (tools/day-summary): local deps + secret config
+tools/day-summary/node_modules/
+tools/day-summary/config.json

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.meetinghub.day-summary</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd $HOME/SynologyDrive/www/MeetingHub/tools/day-summary &amp;&amp; npx tsx run.ts</string>
+  </array>
+  <!-- Nightly at 03:00, summarizing the day that just ended (yesterday).
+       Late enough that notes pushed in the evening have landed. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/noah/Library/Logs/day-summary.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/noah/Library/Logs/day-summary.log</string>
+</dict>
+</plist>

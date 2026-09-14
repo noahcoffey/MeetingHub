@@ -12,13 +12,18 @@ type ActionRes = {
 };
 type ProjectRes = { id: string; name: string; parked?: boolean };
 type NoteRes = { id: string; title: string };
+type DaySummaryRes = { id: string; day: string; label: string };
 
 const OPEN_EVENT = "mh:open-search";
 
 function MeetingIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden>
-      <path d="M4 5.5h12M4 10h12M4 14.5h7" strokeWidth="1.5" strokeLinecap="round" />
+      <path
+        d="M4 5.5h12M4 10h12M4 14.5h7"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -45,6 +50,19 @@ function ProjectIcon() {
     </svg>
   );
 }
+// Distinct from the note and meeting glyphs on purpose: a day summary is a
+// synthesis, and must never read as a primary note at a glance.
+function DaySummaryIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden>
+      <path
+        d="M10 3.5l1.6 3.9 3.9 1.6-3.9 1.6L10 14.5l-1.6-3.9L4.5 9l3.9-1.6L10 3.5z"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 function NoteIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden>
@@ -53,7 +71,11 @@ function NoteIcon() {
         strokeWidth="1.5"
         strokeLinejoin="round"
       />
-      <path d="M11 16v-3.5a1 1 0 011-1h3.5" strokeWidth="1.5" strokeLinejoin="round" />
+      <path
+        d="M11 16v-3.5a1 1 0 011-1h3.5"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -66,6 +88,7 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
   const [actions, setActions] = useState<ActionRes[]>([]);
   const [projects, setProjects] = useState<ProjectRes[]>([]);
   const [notes, setNotes] = useState<NoteRes[]>([]);
+  const [daySummaries, setDaySummaries] = useState<DaySummaryRes[]>([]);
   const [active, setActive] = useState(0);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,7 +99,13 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
   const meetingHref = (id: string) =>
     `/meetings/${id}${hl ? `?q=${encodeURIComponent(hl)}` : ""}`;
 
+  const daySummaryHref = (day: string) => `/meetings?date=${day}&view=day`;
+
   const items = [
+    ...daySummaries.map((d) => ({
+      key: `d-${d.id}`,
+      href: daySummaryHref(d.day),
+    })),
     ...meetings.map((m) => ({ key: `m-${m.id}`, href: meetingHref(m.id) })),
     ...actions.map((a) => ({
       key: `a-${a.id}`,
@@ -135,6 +164,7 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
     setActions([]);
     setProjects([]);
     setNotes([]);
+    setDaySummaries([]);
     setActive(0);
   }, [open]);
 
@@ -147,6 +177,7 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
       setActions([]);
       setProjects([]);
       setNotes([]);
+      setDaySummaries([]);
       setActive(0);
       return;
     }
@@ -159,6 +190,7 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
         setActions(data.actions ?? []);
         setProjects(data.projects ?? []);
         setNotes(data.notes ?? []);
+        setDaySummaries(data.daySummaries ?? []);
         setActive(0);
       } catch {
         /* ignore */
@@ -202,7 +234,12 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
 
   const query = q.trim();
   const hasResults =
-    meetings.length + actions.length + projects.length + notes.length > 0;
+    daySummaries.length +
+      meetings.length +
+      actions.length +
+      projects.length +
+      notes.length >
+    0;
 
   return (
     <div className="cmdk-overlay" onMouseDown={() => setOpen(false)}>
@@ -230,32 +267,59 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
           {query.length < 2 ? (
             <div className="cmdk-hint">Type at least 2 characters…</div>
           ) : !hasResults ? (
-            <div className="cmdk-hint">{loading ? "Searching…" : "No results"}</div>
+            <div className="cmdk-hint">
+              {loading ? "Searching…" : "No results"}
+            </div>
           ) : (
             <>
-              {meetings.length > 0 && <div className="cmdk-group">Meetings</div>}
-              {meetings.map((m, i) => (
+              {daySummaries.length > 0 && (
+                <div className="cmdk-group">Day summaries</div>
+              )}
+              {daySummaries.map((d, i) => (
                 <button
-                  key={m.id}
+                  key={d.id}
                   data-idx={i}
                   className={`cmdk-row ${active === i ? "is-active" : ""}`}
                   onMouseMove={() => setActive(i)}
-                  onClick={() => go(meetingHref(m.id))}
+                  onClick={() => go(daySummaryHref(d.day))}
                 >
                   <span className="cmdk-icon">
-                    <MeetingIcon />
+                    <DaySummaryIcon />
                   </span>
                   <span className="cmdk-text">
-                    <span className="cmdk-title">{m.title}</span>
-                    <span className="cmdk-sub">{m.subtitle}</span>
+                    <span className="cmdk-title">{d.label}</span>
+                    <span className="cmdk-sub">Day summary</span>
                   </span>
                 </button>
               ))}
+              {meetings.length > 0 && (
+                <div className="cmdk-group">Meetings</div>
+              )}
+              {meetings.map((m, i) => {
+                const idx = daySummaries.length + i;
+                return (
+                  <button
+                    key={m.id}
+                    data-idx={idx}
+                    className={`cmdk-row ${active === idx ? "is-active" : ""}`}
+                    onMouseMove={() => setActive(idx)}
+                    onClick={() => go(meetingHref(m.id))}
+                  >
+                    <span className="cmdk-icon">
+                      <MeetingIcon />
+                    </span>
+                    <span className="cmdk-text">
+                      <span className="cmdk-title">{m.title}</span>
+                      <span className="cmdk-sub">{m.subtitle}</span>
+                    </span>
+                  </button>
+                );
+              })}
               {actions.length > 0 && (
                 <div className="cmdk-group">Action items</div>
               )}
               {actions.map((a, i) => {
-                const idx = meetings.length + i;
+                const idx = daySummaries.length + meetings.length + i;
                 return (
                   <button
                     key={a.id}
@@ -276,9 +340,12 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
                   </button>
                 );
               })}
-              {projects.length > 0 && <div className="cmdk-group">Projects</div>}
+              {projects.length > 0 && (
+                <div className="cmdk-group">Projects</div>
+              )}
               {projects.map((p, i) => {
-                const idx = meetings.length + actions.length + i;
+                const idx =
+                  daySummaries.length + meetings.length + actions.length + i;
                 return (
                   <button
                     key={p.id}
@@ -292,14 +359,21 @@ export function CommandPalette({ workspaceName }: { workspaceName?: string }) {
                     </span>
                     <span className="cmdk-text">
                       <span className="cmdk-title">{p.name}</span>
-                      {p.parked && <span className="cmdk-sub">Parked idea</span>}
+                      {p.parked && (
+                        <span className="cmdk-sub">Parked idea</span>
+                      )}
                     </span>
                   </button>
                 );
               })}
               {notes.length > 0 && <div className="cmdk-group">Notes</div>}
               {notes.map((n, i) => {
-                const idx = meetings.length + actions.length + projects.length + i;
+                const idx =
+                  daySummaries.length +
+                  meetings.length +
+                  actions.length +
+                  projects.length +
+                  i;
                 return (
                   <button
                     key={n.id}
