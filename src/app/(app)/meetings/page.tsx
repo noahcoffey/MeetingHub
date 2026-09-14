@@ -31,8 +31,24 @@ import {
   type SkippedNotesRow,
 } from "../skipped-notes-banner";
 import { MarkdownView } from "./[id]/markdown-view";
+import {
+  DaySummaryCard,
+  type DaySummaryCardData,
+} from "../day-summary-card";
+import { daySummaryBody, getDaySummaryView } from "@/lib/day-summaries";
 
 export const dynamic = "force-dynamic";
+
+// "Sep 14, 7:42 PM" — the unobtrusive generation stamp on the day-summary card.
+function formatGeneratedAt(d: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
 
 export default async function MeetingsPage({
   searchParams,
@@ -59,12 +75,16 @@ export default async function MeetingsPage({
   // Skipped occurrences that nonetheless received generated notes — they'd be
   // invisible otherwise. Never fetched when the advanced setting hides Notes+.
   let skipped: Awaited<ReturnType<typeof listSkippedWithGeneratedForDate>> = [];
+  // The day summary reads the same getMeetingsForDate bucket the list below
+  // renders, so it can never cover a different set of meetings than the view.
+  let daySummary: Awaited<ReturnType<typeof getDaySummaryView>> | null = null;
   if (!isMonth) {
-    [meetings, skipped] = await Promise.all([
+    [meetings, skipped, daySummary] = await Promise.all([
       getMeetingsForDate(workspaceId, date),
       hideGenerated || isNotes
         ? Promise.resolve([])
         : listSkippedWithGeneratedForDate(workspaceId, date),
+      isNotes ? Promise.resolve(null) : getDaySummaryView(workspaceId, date),
     ]);
     // Auto mode with an empty day → month view, so sparse workspaces (a
     // a club that meets twice a month) land somewhere useful by default.
@@ -113,6 +133,24 @@ export default async function MeetingsPage({
   const monthHref = dq ? `/meetings?${dq}&view=month` : "/meetings?view=month";
 
   const noted = meetings.filter((m) => m.notes.trim().length > 0);
+
+  const daySummaryData: DaySummaryCardData | null = daySummary && {
+    id: daySummary.summary?.id ?? null,
+    body: daySummary.summary ? daySummaryBody(daySummary.summary) : "",
+    generated: daySummary.summary?.markdown ?? "",
+    status: daySummary.status,
+    stale: daySummary.stale,
+    edited: daySummary.edited,
+    error: daySummary.summary?.error ?? null,
+    model: daySummary.summary?.model ?? null,
+    generatedAtLabel: daySummary.summary?.generatedAt
+      ? formatGeneratedAt(daySummary.summary.generatedAt)
+      : null,
+    hasNotes: daySummary.hasNotes,
+    configured: daySummary.configured,
+    meetingCount: daySummary.stats.meetingCount,
+    totalTimeLabel: daySummary.stats.totalTimeLabel,
+  };
 
   // Month rows grouped into per-day sections, chronological.
   const monthDays: { day: string; items: typeof monthMeetings }[] = [];
@@ -263,6 +301,13 @@ export default async function MeetingsPage({
         )
       ) : (
         <>
+          {daySummaryData && (
+            // Keyed on the date: day navigation re-renders this same component,
+            // and without a key an in-progress edit or a dismissed error from
+            // one day would carry over onto the next.
+            <DaySummaryCard key={date} date={date} data={daySummaryData} />
+          )}
+
           <MeetingList
             initial={meetings.map((m) => ({
               id: m.id,

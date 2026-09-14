@@ -328,6 +328,29 @@ Defined in `src/db/schema.ts`. Core tables:
   runner) from `GET /api/v1/summary-context` (one aggregate in `lib/summary-context.ts` — disabled
   workspace features → null sections), pushed via upserting `PUT /api/v1/summaries`, rendered under
   `/summaries`. Which workspaces get summaries is the runner's config — no app-side toggle.
+- `day_summaries` — one AI-written **Day Summary** per workspace per calendar day, keyed unique
+  `(workspace_id, day)` (`day` = the covered date in `APP_TIMEZONE`; FK restrict). A synthesis
+  *across* the day's meetings — the connections no single meeting contains — not a digest of
+  per-meeting summaries. Unlike `weekly_summaries`, generation happens **in the app**
+  (`lib/day-summary-model.ts`, the one LLM dependency; see "Out of scope" below), triggered from
+  the day view. The meeting set is `getMeetingsForDate` — the *same* query the day view lists — so
+  a summary can never cover a different set of meetings than the page it appears on; only meetings
+  with manual or generated notes feed it, and a day with none never calls the model.
+  **Edits vs. regeneration is decided, not implicit:** `markdown` is the model's output and the
+  only field regeneration writes; `markdownEdited` is the hand-edited body and is what renders
+  (`daySummaryBody`). Reset clears it back to null. There is no DELETE endpoint, so an overwrite
+  would be unrecoverable. `input_fingerprint` is sha256 over the day's *noted* meetings +
+  `notes_updated_at`/`notes_generated_updated_at` (deliberately not `updated_at`, which every ICS
+  re-import bumps); the day view recomputes it and flags **stale** — never auto-regenerates.
+  `status` (generating|ready|failed) + `error` let a reload mid-flight show progress; a
+  `generating` row older than `GENERATING_TIMEOUT_MS` reads as failed so nothing sticks.
+  Input shaping is pure and unit-tested in `lib/day-summary-input.ts`
+  (fingerprint, stats, and the extraction that passes **only** the Summary / Decisions Made /
+  Action Items sections of `notes_generated` — passing full generated bodies makes output worse,
+  not better); the prompt and its guardrails live in `lib/day-summary-prompt.ts`. Surfaces: the
+  card at the top of the day view (`(app)/day-summary-card.tsx`), `/api/v1/day-summaries` (see
+  `API.md`) and its session-authed twin `/api/day-summaries` that the button calls, and ⌘K search
+  as its own result type linking back to the day view. No MCP exposure yet.
 - Action-items UI: `(app)/action-items-list.tsx` is the shared client list — shows ALL open items.
   Default grouping is **this meeting/entry → overdue → due today → this week → next week → later
   (incl. undated)** (the meeting rail passes `currentMeetingId`, the journal rail
@@ -350,7 +373,10 @@ Defined in `src/db/schema.ts`. Core tables:
 Unified ⌘K palette (`(app)/command-palette.tsx`, global) over `GET /api/search` → `src/lib/search.ts`.
 Postgres-native: full-text (`to_tsquery` prefix + `ts_rank`) hybrid with `pg_trgm` `word_similarity`
 fuzzy, across meeting title/notes/notes_generated/description + action-item content + project
-name/description + note title/body — always scoped to the active workspace. `pg_trgm` enabled
+name/description + note title/body + day-summary body — always scoped to the active workspace.
+Day summaries are their own result type (own group + icon in the palette) and deliberately are
+**not** deduplicated against their source meetings: a query may legitimately match both the
+synthesis and the notes it came from, and only `ready` rows are searchable. `pg_trgm` enabled
 via migration `0004`. Query-time tsvector (no indexes yet — fine at single-user scale).
 
 ## Note ingest API
@@ -421,11 +447,18 @@ exposure yet (follow-up).
 
 ## Out of scope (do not build)
 
-AI synthesis/digests **inside the app** (note ingest and weekly-summary storage/serving are built;
-*generation* always happens outside — AI notes are pushed via `/api/ingest`, and the Sunday
-Summary is produced by the local agent in `tools/sunday-summary` and pushed via
-`PUT /api/v1/summaries`; never add an LLM dependency or scheduler to the app), task-manager
-migration, semantic/vector search, multi-user/sharing.
+Task-manager migration, semantic/vector search, multi-user/sharing.
+
+**AI synthesis inside the app used to be on this list; the Day Summary is a deliberate, scoped
+exception.** Meeting notes and the weekly Sunday Summary still follow the old rule — *generation*
+happens outside the app (AI notes pushed via `/api/ingest`; the Sunday Summary produced by the
+local agent in `tools/sunday-summary` and pushed via `PUT /api/v1/summaries`) — and that rule
+stays. The Day Summary breaks it because the feature is a **button on the day view**: a user
+asking for a summary of an arbitrary past day cannot be served by a scheduled external runner.
+So: the LLM dependency is confined to `lib/day-summary-model.ts`, generation is always
+user-triggered (there is still **no scheduler in the app**), and the app degrades to "not
+configured" when `ANTHROPIC_API_KEY` is unset. Don't widen this to other features without the
+same deliberation, and don't add a cron/scheduler.
 
 Note: a project↔project graph **is** built now (`project_relations` + the hub's Map tab) — it
 replaced the former "bidirectional links/graph" entry on this list. That decision is scoped to

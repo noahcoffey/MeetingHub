@@ -61,6 +61,15 @@ export const recurrenceUnitEnum = pgEnum("recurrence_unit", [
   "year",
 ]);
 export const apiTokenScopeEnum = pgEnum("api_token_scope", ["read", "write"]);
+
+// Day Summary generation is a long-running model call kicked off from the day
+// view; the row is written up front so a reload mid-flight still shows
+// "Generating…" instead of an empty state.
+export const daySummaryStatusEnum = pgEnum("day_summary_status", [
+  "generating",
+  "ready",
+  "failed",
+]);
 // Journal stat kinds. scale = labeled 1..N buttons; number = free numeric (opt
 // min/max/unit); boolean = yes/no; text = free-text reflection (Wins/Learnings).
 export const journalStatTypeEnum = pgEnum("journal_stat_type", [
@@ -863,6 +872,47 @@ export const weeklySummaries = pgTable(
   (t) => [unique().on(t.workspaceId, t.weekStart)],
 );
 
+// One AI-written synthesis per workspace per calendar day (app tz), generated
+// from that day's meeting notes. Unlike weekly_summaries — which is written by
+// an external runner and only stored here — a day summary is generated in-app
+// from the day view, so this table also carries the generation state.
+export const daySummaries = pgTable(
+  "day_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    // The calendar day covered (YYYY-MM-DD in APP_TIMEZONE) — the same bucket
+    // the day view uses, so the summary always covers what the view shows.
+    day: date("day").notNull(),
+    // --- §7: edits and regeneration are separate fields, deliberately. ---
+    // `markdown` is the model's output and is the ONLY field regeneration
+    // touches. `markdownEdited`, when set, is the user's hand-edited version
+    // and is what the view renders; regenerating never overwrites it, and
+    // "Reset to generated" clears it back to null. There is no DELETE endpoint
+    // in this API, so an overwrite would be unrecoverable.
+    markdown: text("markdown").notNull().default(""),
+    markdownEdited: text("markdown_edited"),
+    model: text("model"),
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+    // sha256 over the day's noted meetings + their note timestamps. Recomputed
+    // on day-view load; a mismatch means the inputs moved and the summary is
+    // stale. Staleness is derived at read time, never stored.
+    inputFingerprint: text("input_fingerprint").notNull().default(""),
+    status: daySummaryStatusEnum("status").notNull().default("ready"),
+    // Operator-facing failure reason. Never contains note content.
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [unique().on(t.workspaceId, t.day)],
+);
+
 // ---- inferred types ----
 export type OauthClient = typeof oauthClients.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
@@ -894,3 +944,5 @@ export type WebauthnCredential = typeof webauthnCredentials.$inferSelect;
 export type RecoveryCode = typeof recoveryCodes.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type WeeklySummary = typeof weeklySummaries.$inferSelect;
+export type DaySummary = typeof daySummaries.$inferSelect;
+export type DaySummaryStatus = (typeof daySummaryStatusEnum.enumValues)[number];

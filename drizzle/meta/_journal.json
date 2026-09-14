@@ -281,6 +281,13 @@
       "when": 1787347824475,
       "tag": "0039_absurd_havok",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789417919744,
+      "tag": "0040_great_raider",
+      "breakpoints": true
     }
   ]
 }

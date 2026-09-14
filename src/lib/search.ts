@@ -25,11 +25,21 @@ export type NoteHit = {
   id: string;
   title: string;
 };
+// A day summary is a synthesis over a day's meetings, not a primary note, so it
+// is its own result type — the palette gives it its own group and icon, and the
+// subtitle names the day. Deliberately NOT deduplicated against its source
+// meetings: a query can legitimately match both the synthesis and the notes it
+// was written from, and the reader wants to choose which to open.
+export type DaySummaryHit = {
+  id: string;
+  day: string;
+};
 export type SearchResults = {
   meetings: MeetingHit[];
   actions: ActionHit[];
   projects: ProjectHit[];
   notes: NoteHit[];
+  daySummaries: DaySummaryHit[];
 };
 
 // Build a prefix tsquery from sanitized terms: "daily stand" -> "daily:* & stand:*".
@@ -51,6 +61,10 @@ const PROJECT_DOC = sql`to_tsvector('english',
   coalesce(name,'') || ' ' || coalesce(description,''))`;
 const NOTE_DOC = sql`to_tsvector('english',
   coalesce(title,'') || ' ' || coalesce(notes,''))`;
+// Search the body the day view actually renders: the hand-edited version when
+// there is one, else the generated one.
+const DAY_SUMMARY_DOC = sql`to_tsvector('english',
+  coalesce(markdown_edited, markdown, ''))`;
 
 // Notes-only search for the /notes page's dedicated search box. Same hybrid
 // FTS-prefix + trigram ranking as the palette's note section, but with a page
@@ -97,9 +111,16 @@ export async function search(
   const projectsEnabled = !disabled.includes("projects");
   const notesEnabled = !disabled.includes("notes");
   const q = query.trim();
-  if (q.length < 2) return { meetings: [], actions: [], projects: [], notes: [] };
+  const empty: SearchResults = {
+    meetings: [],
+    actions: [],
+    projects: [],
+    notes: [],
+    daySummaries: [],
+  };
+  if (q.length < 2) return empty;
   const tsq = buildTsQuery(q);
-  if (!tsq) return { meetings: [], actions: [], projects: [], notes: [] };
+  if (!tsq) return empty;
 
   // Hybrid: full-text (prefix) match OR trigram word-similarity (fuzzy/typo),
   // ranked by the best of ts_rank and word_similarity.
@@ -168,7 +189,24 @@ export async function search(
   `)) as unknown as Array<{ id: string; title: string }>)
     : [];
 
+  // Gated on `meetings`, like the meetings group — a day summary aggregates
+  // that day's meeting notes and must never be more findable than its sources.
+  // No trigram arm: there is no short title to fuzzy-match, only a long body.
+  const daySummaryRows = meetingsEnabled
+    ? ((await db.execute(sql`
+    SELECT id, day::text AS day
+    FROM day_summaries
+    WHERE workspace_id = ${workspaceId}
+      AND status = 'ready'
+      AND ${DAY_SUMMARY_DOC} @@ to_tsquery('english', ${tsq})
+    ORDER BY ts_rank(${DAY_SUMMARY_DOC}, to_tsquery('english', ${tsq})) DESC,
+      day DESC
+    LIMIT 5
+  `)) as unknown as Array<{ id: string; day: string }>)
+    : [];
+
   return {
+    daySummaries: daySummaryRows.map((r) => ({ id: r.id, day: r.day })),
     meetings: meetingRows.map((r) => ({
       id: r.id,
       title: r.title,

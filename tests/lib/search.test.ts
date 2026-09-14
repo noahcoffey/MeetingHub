@@ -4,6 +4,8 @@ import { createMeeting } from "@/lib/meetings";
 import { createActionItem } from "@/lib/action-items";
 import { createProject } from "@/lib/projects";
 import { createNote } from "@/lib/notes";
+import { db } from "@/db";
+import { daySummaries } from "@/db/schema";
 import { makeWorkspace, resetDb } from "../helpers";
 
 let ws: string;
@@ -72,5 +74,76 @@ describe("search", () => {
     expect(r.actions).toHaveLength(0);
     expect(r.projects).toHaveLength(0);
     expect(r.notes).toHaveLength(0);
+  });
+});
+
+describe("search: day summaries", () => {
+  async function addSummary(
+    workspaceId: string,
+    over: Partial<{
+      day: string;
+      markdown: string;
+      markdownEdited: string | null;
+      status: "generating" | "ready" | "failed";
+    }> = {},
+  ) {
+    const [row] = await db
+      .insert(daySummaries)
+      .values({
+        workspaceId,
+        day: over.day ?? "2026-09-14",
+        markdown: over.markdown ?? "Portal planning dominated the day.",
+        markdownEdited: over.markdownEdited ?? null,
+        status: over.status ?? "ready",
+        inputFingerprint: "fp",
+        generatedAt: new Date(),
+      })
+      .returning();
+    return row;
+  }
+
+  it("finds a day summary by its body and returns the day", async () => {
+    const s = await addSummary(ws);
+    const r = await search(ws, "portal");
+    expect(r.daySummaries.map((x) => x.id)).toContain(s.id);
+    expect(r.daySummaries[0].day).toBe("2026-09-14");
+  });
+
+  it("searches the hand-edited body when there is one", async () => {
+    await addSummary(ws, {
+      markdown: "generated wording",
+      markdownEdited: "rewritten to mention escrow",
+    });
+    expect((await search(ws, "escrow")).daySummaries.length).toBe(1);
+    expect((await search(ws, "generated")).daySummaries.length).toBe(0);
+  });
+
+  it("surfaces alongside the source meetings rather than replacing them", async () => {
+    await createMeeting(ws, {
+      title: "Portal working session",
+      startTime: new Date("2026-09-14T15:00:00Z"),
+    });
+    await addSummary(ws);
+    const r = await search(ws, "portal");
+    expect(r.daySummaries.length).toBe(1);
+    expect(r.meetings.length).toBe(1);
+  });
+
+  it("does not surface an unfinished or failed summary", async () => {
+    await addSummary(ws, { status: "generating" });
+    await addSummary(ws, { day: "2026-09-15", status: "failed" });
+    expect((await search(ws, "portal")).daySummaries).toEqual([]);
+  });
+
+  it("is scoped to the workspace", async () => {
+    const other = await makeWorkspace("Gamma");
+    await addSummary(other);
+    expect((await search(ws, "portal")).daySummaries).toEqual([]);
+  });
+
+  it("is hidden when the meetings feature is off", async () => {
+    await addSummary(ws);
+    const r = await search(ws, "portal", { disabled: ["meetings"] });
+    expect(r.daySummaries).toEqual([]);
   });
 });

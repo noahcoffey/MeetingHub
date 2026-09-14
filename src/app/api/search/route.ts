@@ -3,7 +3,12 @@ import { auth } from "@/auth";
 import { search } from "@/lib/search";
 import { getActiveWorkspace } from "@/lib/workspace-context";
 import { getHideGeneratedNotes } from "@/lib/app-settings";
-import { formatTimeInTz, formatDateInTz, APP_TIMEZONE } from "@/lib/dates";
+import {
+  formatTimeInTz,
+  formatDateInTz,
+  formatDateLabel,
+  APP_TIMEZONE,
+} from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +25,13 @@ export const GET = auth(async (req) => {
   });
 
   return NextResponse.json({
+    // Results link to the day view, not a standalone page — the summary is the
+    // lead of that day, and the reader almost always wants the meetings too.
+    daySummaries: results.daySummaries.map((d) => ({
+      id: d.id,
+      day: d.day,
+      label: formatDateLabel(d.day),
+    })),
     meetings: results.meetings.map((m) => ({
       id: m.id,
       title: m.title,

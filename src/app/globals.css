@@ -7831,3 +7831,86 @@ html {
   font-size: 0.78rem;
   color: var(--danger);
 }
+
+/* ---- day summary (top of the day view) ---- */
+.day-summary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.15rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+
+.day-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  /* Dense row: wrap rather than shrink so the actions never overflow at 320px. */
+  flex-wrap: wrap;
+}
+
+.day-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.day-summary-title svg {
+  width: 15px;
+  height: 15px;
+  color: var(--accent-2);
+}
+
+.day-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.day-summary-stale {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.day-summary-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.88rem;
+}
+
+.day-summary-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.88rem;
+  color: var(--danger);
+}
+
+.day-summary .notes-prose {
+  margin-top: 0.55rem;
+}
+
+.day-summary-original {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.day-summary-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+.day-summary-meta {
+  margin: 0.85rem 0 0;
+  font-size: 0.75rem;
+  color: var(--faint);
+}
