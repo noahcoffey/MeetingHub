@@ -79,14 +79,15 @@ on.
 | GET | `/api/v1/summaries?workspace=` | Weekly summaries, meta only (no markdown), newest week first |
 | PUT | `/api/v1/summaries?workspace=` | Upsert a summary by `(workspace, weekStart)` — 201 created / 200 overwritten |
 | GET | `/api/v1/summaries/:id` | Full row incl. `markdown` |
+| GET | `/api/v1/day-summary-context?workspace=&date=` | One day's meeting-note payload for the Day-Summary runner |
 | GET | `/api/v1/day-summaries?workspace=&from=&to=` | Day summaries, meta only (no bodies), newest day first |
-| POST | `/api/v1/day-summaries?workspace=` | `{ date }` — generate that day's summary; 201 created / 200 regenerated |
+| PUT | `/api/v1/day-summaries?workspace=` | Upsert a summary by `(workspace, date)` — 201 created / 200 overwritten |
 | GET | `/api/v1/day-summaries/:id` | Full row incl. `markdown` and `markdownEdited` |
 | PATCH | `/api/v1/day-summaries/:id` | `{ markdown }` — edit the body, or `null` to reset |
 
 Responses: lists are `{ items: [...] }`, single rows `{ item: {...} }`,
-creates return 201 (the two upserting endpoints, `PUT /api/v1/summaries` and
-`POST /api/v1/day-summaries`, return 200 when they overwrite). Dates are ISO 8601; day-scoped fields (`dueDate`,
+creates return 201 (the upserting endpoints, `PUT /api/v1/summaries` and
+`PUT /api/v1/day-summaries`, return 200 when they overwrite). Dates are ISO 8601; day-scoped fields (`dueDate`,
 `deadline`) are `YYYY-MM-DD`.
 
 Project↔project relations (`project_relations`) have **no v1 or MCP surface yet** — they're
@@ -121,6 +122,7 @@ waiting-on), `recurrenceUnit` (`day|weekday|week|month|year`) +
 Storage/serving for the **Sunday Summary** — an AI-written weekly briefing
 generated *outside* the app by the local runner in `tools/sunday-summary`
 (see its README). The app never calls an LLM; these endpoints just move data.
+The daily counterpart is below.
 
 - `weekStart` must be a **Monday** (`YYYY-MM-DD`) — it keys the summary to the
   week it prepares for. Non-Mondays 400.
@@ -152,40 +154,51 @@ connections no single meeting contains (a decision made in the morning
 validated in the afternoon, a date that shifts between conversations, an
 intention stated once and never confirmed again).
 
-Unlike the weekly Sunday Summary, generation happens **inside the app**: `POST`
-runs the model call and returns the finished row.
+Like the weekly Sunday Summary, these endpoints are **storage and serving
+only**. Generation happens outside the app, in the local runner at
+`tools/day-summary` (see its README) — the app never calls an LLM.
 
 - `date` is `YYYY-MM-DD` in `APP_TIMEZONE`, and buckets meetings exactly as the
   day view does. Any past day is allowed.
-- **Idempotent per `(workspace, date)`** — there is one row per day and `POST`
-  always upserts into it: **201** the first time, **200** on a regenerate.
-  Re-running never creates a second summary.
-- `POST` is gated on the `meetings` feature and, like the day view, only sees
-  meetings that are not skipped or hidden by title.
-- Only meetings with manual or generated notes are summarized. A day with none
-  returns **400** and the model is never called.
-- **Edits and regeneration are separate fields.** `markdown` is the model's
-  output and is the only field `POST` writes; `markdownEdited` is your
-  hand-edited version and is what the app renders. Regenerating never
-  overwrites an edit. `PATCH {"markdown": null}` (or text identical to the
-  generated body) clears the edit and falls back to the generated one — the
-  generated body is not writable over the API.
-- `inputFingerprint` is a hash of the day's noted meetings and their note
-  timestamps. The day view recomputes it on load and flags the summary as
-  stale when it differs; nothing is ever silently regenerated.
-- `status` is `generating` | `ready` | `failed`, with `error` set on failure.
+- `GET /api/v1/day-summary-context` assembles everything the runner's prompt
+  needs in one payload: `dateLabel`, `meetingCount`, `totalTimeLabel` (the sum
+  of scheduled durations, computed server-side so the model never has to add up
+  time ranges), `inputFingerprint`, and per meeting its title, a pre-rendered
+  `timeLabel`, attendees, manual `notes` **in full**, and `generatedSections` —
+  **only** the Summary / Decisions Made / Action Items of its AI-generated
+  notes. Full generated bodies are deliberately never served: they restate what
+  those three carry, and passing them makes output worse, not better.
+  A day where no meeting has notes returns **200** with `hasNotes: false` and an
+  empty `meetings` array — not an error, so a nightly runner doesn't fail every
+  quiet weekend.
+- `PUT /api/v1/day-summaries` upserts by `(workspace, date)`, so the runner can
+  re-run safely. Body: `date`, `markdown` (required), plus optional `model`,
+  `generatedAt` (ISO datetime, defaults to now) and `inputFingerprint`.
+- **`inputFingerprint` is stored exactly as sent, never recomputed on arrival.**
+  The runner reads the context, spends minutes in the model, then pushes; notes
+  routinely land in between. Recomputing would make a summary written from the
+  old inputs look current — precisely the case staleness exists to catch. Omit
+  it and the server computes one, which is the best it can do for a hand-rolled
+  push. The day view recomputes and compares on load, flagging the summary as
+  stale; nothing is ever silently regenerated.
+- **Edits and regeneration are separate fields.** `markdown` is the runner's
+  output and the only field `PUT` writes; `markdownEdited` is your hand-edited
+  version and is what the app renders. A re-push never overwrites an edit.
+  `PATCH {"markdown": null}` (or text identical to the generated body) clears
+  the edit and falls back to the generated one — the generated body is not
+  writable over the API.
 
 ```bash
-curl -X POST -H "Authorization: Bearer mh_..." \
+# What the runner reads
+curl -H "Authorization: Bearer mh_..." \
+  "https://<host>/api/v1/day-summary-context?workspace=<uuid>&date=2026-09-14"
+
+# What it pushes back
+curl -X PUT -H "Authorization: Bearer mh_..." \
   -H "Content-Type: application/json" \
-  -d '{"date": "2026-09-14"}' \
+  -d '{"date": "2026-09-14", "markdown": "**Monday...**", "model": "claude-opus-5", "inputFingerprint": "<from the context response>"}' \
   "https://<host>/api/v1/day-summaries?workspace=<uuid>"
 ```
-
-Extra status codes for `POST /api/v1/day-summaries`: **409** a summary for that
-day is already being generated, **503** generation isn't configured on the
-server (`ANTHROPIC_API_KEY` unset), **502** the model call failed (the row is
-left `failed`, with the reason in `error`).
 
 ## Errors
 

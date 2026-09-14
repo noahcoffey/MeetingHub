@@ -197,7 +197,6 @@ export async function search(
     SELECT id, day::text AS day
     FROM day_summaries
     WHERE workspace_id = ${workspaceId}
-      AND status = 'ready'
       AND ${DAY_SUMMARY_DOC} @@ to_tsquery('english', ${tsq})
     ORDER BY ts_rank(${DAY_SUMMARY_DOC}, to_tsquery('english', ${tsq})) DESC,
       day DESC

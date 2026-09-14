@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateDaySummary, listDaySummaries } from "@/lib/day-summaries";
+import { listDaySummaries, upsertDaySummary } from "@/lib/day-summaries";
 import { isValidDateParam } from "@/lib/dates";
 import {
   checkFeature,
@@ -10,10 +10,6 @@ import {
 } from "../_lib/helpers";
 
 export const dynamic = "force-dynamic";
-
-// Generation is a model call over a full day of notes — well past the default
-// serverless budget.
-export const maxDuration = 300;
 
 // List is meta-only (no markdown bodies) — fetch a summary by id for the body.
 // Optional ?from=&to= (YYYY-MM-DD, inclusive) narrow the range; no pagination.
@@ -40,11 +36,14 @@ export const GET = withV1({}, async (req, _ctx, principal) => {
   return NextResponse.json({ items });
 });
 
-// Generate for a given date. Idempotent per (workspace, day): re-running
-// replaces the generated body of the one row for that day rather than creating
-// a second summary — and never touches a hand-edited body (see
-// generateDaySummary). Any past day is allowed; looking back is the point.
-export const POST = withV1({ write: true }, async (req, _ctx, principal) => {
+// Upsert by (workspace, day), so the runner can re-run safely — 201 on the
+// first push for a day, 200 on overwrite. Any day is allowed; backfilling a
+// past day is a normal thing to want.
+//
+// `inputFingerprint` should be the value the runner got from
+// /api/v1/day-summary-context before generating. It is stored as given, not
+// recomputed — see upsertDaySummary for why that matters.
+export const PUT = withV1({ write: true }, async (req, _ctx, principal) => {
   const ws = await resolveWorkspace(req, principal);
   if (!ws.ok) return ws.res;
   const disabled = checkFeature(ws.workspace, "meetings");
@@ -52,27 +51,42 @@ export const POST = withV1({ write: true }, async (req, _ctx, principal) => {
 
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return parsed.res;
-  const { date } = (parsed.body ?? {}) as { date?: unknown };
+  const { date, markdown, model, generatedAt, inputFingerprint } =
+    (parsed.body ?? {}) as {
+      date?: unknown;
+      markdown?: unknown;
+      model?: unknown;
+      generatedAt?: unknown;
+      inputFingerprint?: unknown;
+    };
+
   if (typeof date !== "string" || !isValidDateParam(date)) {
     return err("date is required (YYYY-MM-DD)", 400);
   }
-
-  const result = await generateDaySummary(ws.workspace.id, date);
-  if (!result.ok) {
-    const status =
-      result.reason === "no-notes"
-        ? 400
-        : result.reason === "in-flight"
-          ? 409
-          : result.reason === "not-configured"
-            ? 503
-            : 502;
-    return err(result.message, status);
+  if (typeof markdown !== "string" || markdown.trim() === "") {
+    return err("markdown is required", 400);
   }
-  // 201 on the first summary for a day, 200 on a regenerate — the same
-  // created/overwritten distinction PUT /api/v1/summaries makes.
-  return NextResponse.json(
-    { item: result.item },
-    { status: result.created ? 201 : 200 },
-  );
+  if (model !== undefined && model !== null && typeof model !== "string") {
+    return err("model must be a string", 400);
+  }
+  if (inputFingerprint !== undefined && typeof inputFingerprint !== "string") {
+    return err("inputFingerprint must be a string", 400);
+  }
+  let generatedAtDate: Date | undefined;
+  if (generatedAt !== undefined) {
+    if (typeof generatedAt !== "string" || Number.isNaN(Date.parse(generatedAt))) {
+      return err("generatedAt must be an ISO datetime", 400);
+    }
+    generatedAtDate = new Date(generatedAt);
+  }
+
+  const { item, created } = await upsertDaySummary(ws.workspace.id, {
+    day: date,
+    markdown,
+    model: typeof model === "string" ? model : null,
+    generatedAt: generatedAtDate,
+    inputFingerprint:
+      typeof inputFingerprint === "string" ? inputFingerprint : undefined,
+  });
+  return NextResponse.json({ item }, { status: created ? 201 : 200 });
 });

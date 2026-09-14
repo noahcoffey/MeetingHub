@@ -94,7 +94,6 @@ describe("search: day summaries", () => {
         day: over.day ?? "2026-09-14",
         markdown: over.markdown ?? "Portal planning dominated the day.",
         markdownEdited: over.markdownEdited ?? null,
-        status: over.status ?? "ready",
         inputFingerprint: "fp",
         generatedAt: new Date(),
       })
@@ -127,12 +126,6 @@ describe("search: day summaries", () => {
     const r = await search(ws, "portal");
     expect(r.daySummaries.length).toBe(1);
     expect(r.meetings.length).toBe(1);
-  });
-
-  it("does not surface an unfinished or failed summary", async () => {
-    await addSummary(ws, { status: "generating" });
-    await addSummary(ws, { day: "2026-09-15", status: "failed" });
-    expect((await search(ws, "portal")).daySummaries).toEqual([]);
   });
 
   it("is scoped to the workspace", async () => {

@@ -8,7 +8,6 @@ import {
   UNSECTIONED_FALLBACK_CHARS,
   type DaySummaryMeetingInput,
 } from "@/lib/day-summary-input";
-import { buildDaySummaryPrompt } from "@/lib/day-summary-prompt";
 
 function meeting(
   over: Partial<DaySummaryMeetingInput> = {},
@@ -189,58 +188,5 @@ describe("formatMinutes", () => {
     [225, "3h 45m"],
   ])("%i -> %s", (mins, label) => {
     expect(formatMinutes(mins)).toBe(label);
-  });
-});
-
-describe("buildDaySummaryPrompt", () => {
-  const rows = [
-    meeting({
-      id: "a",
-      title: "1:1",
-      notes: "Atlas is the platform of record.",
-      notesGenerated:
-        "## Summary\nAtlus was discussed.\n\n## Key Discussion Points\nnoise noise noise",
-      attendees: [{ name: "Alex Rivera", email: "alex@example.com" }],
-    }),
-    meeting({
-      id: "b",
-      title: "Working session",
-      notes: "",
-      notesGenerated: "## Decisions Made\n- Build iteratively",
-      attendees: [],
-    }),
-  ];
-
-  it("includes manual notes in full and only the wanted generated sections", () => {
-    const p = buildDaySummaryPrompt("Monday, September 14, 2026", rows);
-    expect(p).toContain("Atlas is the platform of record.");
-    expect(p).toContain("Build iteratively");
-    expect(p).not.toContain("noise noise noise");
-  });
-
-  it("passes the computed header figures as data", () => {
-    const p = buildDaySummaryPrompt("Monday, September 14, 2026", rows);
-    expect(p).toContain("Meeting count: 2");
-    expect(p).toContain("Total time (sum of scheduled durations): 1h");
-  });
-
-  it("names attendees when the calendar captured them, and says so when it didn't", () => {
-    const p = buildDaySummaryPrompt("Monday, September 14, 2026", rows);
-    expect(p).toContain("Alex Rivera");
-    expect(p).toContain("Attendees: not recorded");
-  });
-
-  it("marks a meeting with no manual notes rather than implying there were some", () => {
-    const p = buildDaySummaryPrompt("Monday, September 14, 2026", rows);
-    expect(p).toContain("nothing was typed by hand");
-  });
-
-  it("omits meetings with no notes at all", () => {
-    const p = buildDaySummaryPrompt("Monday, September 14, 2026", [
-      ...rows,
-      meeting({ id: "z", title: "Blocked focus time", notes: "", notesGenerated: null }),
-    ]);
-    expect(p).not.toContain("Blocked focus time");
-    expect(p).toContain("Meeting count: 2");
   });
 });

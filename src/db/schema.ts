@@ -61,15 +61,6 @@ export const recurrenceUnitEnum = pgEnum("recurrence_unit", [
   "year",
 ]);
 export const apiTokenScopeEnum = pgEnum("api_token_scope", ["read", "write"]);
-
-// Day Summary generation is a long-running model call kicked off from the day
-// view; the row is written up front so a reload mid-flight still shows
-// "Generating…" instead of an empty state.
-export const daySummaryStatusEnum = pgEnum("day_summary_status", [
-  "generating",
-  "ready",
-  "failed",
-]);
 // Journal stat kinds. scale = labeled 1..N buttons; number = free numeric (opt
 // min/max/unit); boolean = yes/no; text = free-text reflection (Wins/Learnings).
 export const journalStatTypeEnum = pgEnum("journal_stat_type", [
@@ -872,10 +863,9 @@ export const weeklySummaries = pgTable(
   (t) => [unique().on(t.workspaceId, t.weekStart)],
 );
 
-// One AI-written synthesis per workspace per calendar day (app tz), generated
-// from that day's meeting notes. Unlike weekly_summaries — which is written by
-// an external runner and only stored here — a day summary is generated in-app
-// from the day view, so this table also carries the generation state.
+// One AI-written synthesis per workspace per calendar day (app tz), built from
+// that day's meeting notes. Storage and serving only: like weekly_summaries,
+// generation happens OUTSIDE the app, in the local runner at tools/day-summary.
 export const daySummaries = pgTable(
   "day_summaries",
   {
@@ -886,23 +876,22 @@ export const daySummaries = pgTable(
     // The calendar day covered (YYYY-MM-DD in APP_TIMEZONE) — the same bucket
     // the day view uses, so the summary always covers what the view shows.
     day: date("day").notNull(),
-    // --- §7: edits and regeneration are separate fields, deliberately. ---
-    // `markdown` is the model's output and is the ONLY field regeneration
-    // touches. `markdownEdited`, when set, is the user's hand-edited version
-    // and is what the view renders; regenerating never overwrites it, and
-    // "Reset to generated" clears it back to null. There is no DELETE endpoint
-    // in this API, so an overwrite would be unrecoverable.
-    markdown: text("markdown").notNull().default(""),
+    // --- edits and regeneration are separate fields, deliberately. ---
+    // `markdown` is the runner's output and the ONLY field a re-push touches.
+    // `markdownEdited`, when set, is the user's hand-edited version and is what
+    // the view renders; a re-push never overwrites it, and "Reset to generated"
+    // clears it back to null. There is no DELETE endpoint in this API, so an
+    // overwrite would be unrecoverable.
+    markdown: text("markdown").notNull(),
     markdownEdited: text("markdown_edited"),
-    model: text("model"),
-    generatedAt: timestamp("generated_at", { withTimezone: true }),
-    // sha256 over the day's noted meetings + their note timestamps. Recomputed
-    // on day-view load; a mismatch means the inputs moved and the summary is
-    // stale. Staleness is derived at read time, never stored.
+    model: text("model"), // reported by the runner; null if it didn't say
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    // sha256 over the day's noted meetings + their note timestamps, as they
+    // stood when the runner READ them — echoed back in the push, not recomputed
+    // on arrival (notes can land during the minutes the model is writing).
+    // Recomputed on day-view load and compared; a mismatch means the inputs
+    // moved and the summary is stale. Staleness is derived, never stored.
     inputFingerprint: text("input_fingerprint").notNull().default(""),
-    status: daySummaryStatusEnum("status").notNull().default("ready"),
-    // Operator-facing failure reason. Never contains note content.
-    error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -945,4 +934,3 @@ export type RecoveryCode = typeof recoveryCodes.$inferSelect;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type WeeklySummary = typeof weeklySummaries.$inferSelect;
 export type DaySummary = typeof daySummaries.$inferSelect;
-export type DaySummaryStatus = (typeof daySummaryStatusEnum.enumValues)[number];

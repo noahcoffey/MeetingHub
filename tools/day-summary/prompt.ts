@@ -1,5 +1,4 @@
-// The Day Summary generation prompt and the payload built for it. Pure — no db,
-// no network — so the exact bytes sent to the model are unit-testable.
+// The Day Summary generation prompt and the payload built for it.
 //
 // The guardrails in the system prompt are not stylistic preferences. Each one
 // comes from an observed failure in real generated notes, which are transcript
@@ -8,13 +7,9 @@
 // unrelated English word, and assigned an action item to somebody who wasn't on
 // the call. A day summary *becomes the record*, so a fabricated name or date
 // poisons the exact thing this feature exists to preserve. Edit with care.
-import { formatTimeInTz } from "./dates";
-import {
-  computeDayStats,
-  extractGeneratedSections,
-  notedMeetings,
-  type DaySummaryMeetingInput,
-} from "./day-summary-input";
+//
+// The names and figures in the worked example are fictional placeholders.
+import type { DaySummaryContext } from "./api.js";
 
 export const DAY_SUMMARY_SYSTEM_PROMPT = `You are writing a day summary for a single person, from the notes of the meetings they had on one day. It will be read by that person months later as a record of what happened. Write it for them, not for an audience.
 
@@ -86,66 +81,52 @@ Note what the last item under **Tomorrow** is doing: the morning standup note sa
 Return the summary as Markdown and nothing else. No preamble, no closing remarks, no code fence around it.`;
 
 /**
- * The user-turn payload: one block per noted meeting, in chronological order,
- * plus the header figures computed in code.
+ * The user-turn payload: one block per meeting, in the order the server sent
+ * them, plus the header figures.
  *
- * `notes` goes in whole. `notesGenerated` is cut down to Summary / Decisions
- * Made / Action Items — see {@link extractGeneratedSections} for why the rest is
- * dropped. Attendees are included when the calendar import actually captured
- * them; they are what lets the model resolve two people with the same first
- * name instead of guessing.
+ * Everything here is already prepared by GET /api/v1/day-summary-context —
+ * times are pre-rendered in the app's timezone, and `generatedSections` holds
+ * only the Summary / Decisions Made / Action Items of each meeting's AI notes.
+ * Full generated bodies are deliberately never fetched: they restate what those
+ * three sections carry, and passing them makes the model slower, dearer and
+ * likelier to produce a list instead of a synthesis.
  */
-export function buildDaySummaryPrompt(
-  dateLabel: string,
-  meetings: DaySummaryMeetingInput[],
-): string {
-  const noted = notedMeetings(meetings);
-  const stats = computeDayStats(meetings);
-
-  const blocks = noted.map((m, i) => {
+export function buildUserPrompt(ctx: DaySummaryContext): string {
+  const blocks = ctx.meetings.map((m, i) => {
     const lines: string[] = [];
     lines.push(`## Meeting ${i + 1}: ${m.title}`);
-    const start = formatTimeInTz(m.startTime);
-    const end = m.endTime ? formatTimeInTz(m.endTime) : null;
-    lines.push(`Time: ${end ? `${start}–${end}` : start}`);
-
-    const attendees = m.attendees
-      .map((a) => a.name ?? a.email)
-      .filter((x): x is string => !!x && x.trim() !== "");
-    if (attendees.length > 0) {
-      lines.push(`Attendees (from the calendar invite): ${attendees.join(", ")}`);
-    } else {
-      lines.push(
-        "Attendees: not recorded for this meeting — do not infer who was present beyond what the notes say.",
-      );
-    }
-
-    const manual = m.notes.trim();
+    lines.push(`Time: ${m.timeLabel}`);
+    lines.push(
+      m.attendees.length > 0
+        ? `Attendees (from the calendar invite): ${m.attendees.join(", ")}`
+        : "Attendees: not recorded for this meeting — do not infer who was present beyond what the notes say.",
+    );
     lines.push(
       "",
       "### Manual notes (authoritative)",
-      manual === "" ? "_(none — nothing was typed by hand for this meeting)_" : manual,
+      m.notes === ""
+        ? "_(none — nothing was typed by hand for this meeting)_"
+        : m.notes,
     );
-
-    const generated = extractGeneratedSections(m.notesGenerated);
-    if (generated) {
+    if (m.generatedSections) {
       lines.push(
         "",
         "### AI-generated notes (transcript reconstruction — Summary / Decisions / Action Items only; may contain transcription errors)",
-        generated,
+        m.generatedSections,
       );
     }
     return lines.join("\n");
   });
 
+  const plural = ctx.meetingCount === 1 ? "" : "s";
   const header = [
-    `Date: ${dateLabel}`,
-    `Meeting count: ${stats.meetingCount}`,
-    stats.totalTimeLabel
-      ? `Total time (sum of scheduled durations): ${stats.totalTimeLabel}`
+    `Date: ${ctx.dateLabel}`,
+    `Meeting count: ${ctx.meetingCount}`,
+    ctx.totalTimeLabel
+      ? `Total time (sum of scheduled durations): ${ctx.totalTimeLabel}`
       : "Total time: not available (no meeting had an end time)",
     "",
-    `Use exactly this header line format, filling in the final clause yourself: **${dateLabel}** · ${stats.meetingCount} meeting${stats.meetingCount === 1 ? "" : "s"}${stats.totalTimeLabel ? ` · ${stats.totalTimeLabel}` : ""} · <what dominated the day>`,
+    `Use exactly this header line format, filling in the final clause yourself: **${ctx.dateLabel}** · ${ctx.meetingCount} meeting${plural}${ctx.totalTimeLabel ? ` · ${ctx.totalTimeLabel}` : ""} · <what dominated the day>`,
   ].join("\n");
 
   return `${header}\n\n---\n\n${blocks.join("\n\n---\n\n")}`;

@@ -138,16 +138,13 @@ export default async function MeetingsPage({
     id: daySummary.summary?.id ?? null,
     body: daySummary.summary ? daySummaryBody(daySummary.summary) : "",
     generated: daySummary.summary?.markdown ?? "",
-    status: daySummary.status,
     stale: daySummary.stale,
     edited: daySummary.edited,
-    error: daySummary.summary?.error ?? null,
     model: daySummary.summary?.model ?? null,
     generatedAtLabel: daySummary.summary?.generatedAt
       ? formatGeneratedAt(daySummary.summary.generatedAt)
       : null,
     hasNotes: daySummary.hasNotes,
-    configured: daySummary.configured,
     meetingCount: daySummary.stats.meetingCount,
     totalTimeLabel: daySummary.stats.totalTimeLabel,
   };
@@ -305,7 +302,7 @@ export default async function MeetingsPage({
             // Keyed on the date: day navigation re-renders this same component,
             // and without a key an in-progress edit or a dismissed error from
             // one day would carry over onto the next.
-            <DaySummaryCard key={date} date={date} data={daySummaryData} />
+            <DaySummaryCard key={date} data={daySummaryData} />
           )}
 
           <MeetingList

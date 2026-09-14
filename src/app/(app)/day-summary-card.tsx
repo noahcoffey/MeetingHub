@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MarkdownView } from "./meetings/[id]/markdown-view";
 import { MarkdownEditor } from "./meetings/[id]/markdown-editor";
@@ -9,18 +9,14 @@ export type DaySummaryCardData = {
   id: string | null;
   /** What renders: the hand-edited body when there is one. */
   body: string;
-  /** The model's own output — offered alongside an edited body, and on reset. */
+  /** The runner's output — offered alongside an edited body, and on reset. */
   generated: string;
-  status: "none" | "generating" | "ready" | "failed";
   stale: boolean;
   edited: boolean;
-  error: string | null;
   model: string | null;
   generatedAtLabel: string | null;
   /** Some meeting that day has manual or generated notes. */
   hasNotes: boolean;
-  /** ANTHROPIC_API_KEY is set — without it, don't offer a button that can't work. */
-  configured: boolean;
   meetingCount: number;
   totalTimeLabel: string;
 };
@@ -38,71 +34,16 @@ function SparkIcon() {
 }
 
 // The day's synthesis, at the top of the day view — it's the lead, not an
-// appendix. Nothing renders at all on a day with no notes: there is nothing to
-// summarize, so offering to generate would only ever produce an error.
-export function DaySummaryCard({
-  date,
-  data,
-}: {
-  date: string;
-  data: DaySummaryCardData;
-}) {
+// appendix. Read-only apart from hand edits: summaries are written by the local
+// runner (tools/day-summary) and pushed in, so there is nothing to trigger from
+// here. Nothing renders at all on a day with no notes and no summary.
+export function DaySummaryCard({ data }: { data: DaySummaryCardData }) {
   const router = useRouter();
-  // Local-only. Never seeded from props: router.refresh() re-renders this same
-  // instance with new props but keeps state, so a seeded `busy`/`error` would
-  // survive the very refresh that resolved it.
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [showGenerated, setShowGenerated] = useState(false);
   const [saving, setSaving] = useState(false);
   const draft = useRef(data.body);
-  const running = useRef(false);
-
-  const generate = useCallback(async () => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/day-summaries?date=${encodeURIComponent(date)}`,
-        { method: "POST" },
-      );
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(payload?.error ?? "Generation failed.");
-        return;
-      }
-      router.refresh();
-    } catch {
-      setError("Generation failed.");
-    } finally {
-      setBusy(false);
-      running.current = false;
-    }
-  }, [date, router]);
-
-  // A reload that lands mid-generation shows "Generating…" from the stored
-  // status; poll until the row settles, then pull the finished body in.
-  useEffect(() => {
-    if (data.status !== "generating") return;
-    const id = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `/api/day-summaries?date=${encodeURIComponent(date)}`,
-        );
-        if (!res.ok) return;
-        const { status } = (await res.json()) as { status: string };
-        if (status !== "generating") router.refresh();
-      } catch {
-        /* keep polling — a transient failure isn't a result */
-      }
-    }, 5000);
-    return () => clearInterval(id);
-  }, [data.status, date, router]);
 
   async function saveEdit(markdown: string | null) {
     if (!data.id) return;
@@ -117,6 +58,7 @@ export function DaySummaryCard({
         setError("Could not save your edit.");
         return;
       }
+      setError(null);
       setEditing(false);
       setShowGenerated(false);
       router.refresh();
@@ -127,13 +69,10 @@ export function DaySummaryCard({
     }
   }
 
-  // §9 — a day with nothing to summarize gets no card and no generate action.
-  if (!data.hasNotes && data.status === "none") return null;
-
-  const generating = busy || data.status === "generating";
-  // A failure recorded on the server (e.g. the tab was closed mid-generation)
-  // is just as real as one this component saw happen.
-  const shownError = error ?? (data.status === "failed" ? data.error : null);
+  const hasSummary = !!data.id;
+  // Nothing to show and nothing to explain: a day with no notes was never a
+  // candidate for a summary.
+  if (!hasSummary && !data.hasNotes) return null;
 
   return (
     <section className="day-summary" aria-label="Day summary">
@@ -143,17 +82,16 @@ export function DaySummaryCard({
           Day summary
         </h2>
         <div className="day-summary-actions">
-          {data.stale && !generating && (
-            <span className="badge day-summary-stale" title="Notes changed after this summary was written">
+          {data.stale && (
+            <span
+              className="badge day-summary-stale"
+              title="Notes changed after this summary was written"
+            >
               Inputs changed
             </span>
           )}
-          {data.edited && !generating && (
-            <span className="badge" title="You edited this summary by hand">
-              Edited
-            </span>
-          )}
-          {data.status !== "none" && !editing && !generating && (
+          {data.edited && <span className="badge">Edited</span>}
+          {hasSummary && !editing && (
             <button
               type="button"
               className="row-action"
@@ -165,7 +103,7 @@ export function DaySummaryCard({
               Edit
             </button>
           )}
-          {data.edited && !editing && !generating && (
+          {data.edited && !editing && (
             <button
               type="button"
               className="row-action"
@@ -174,43 +112,27 @@ export function DaySummaryCard({
               {showGenerated ? "Hide original" : "View original"}
             </button>
           )}
-          {data.configured && !editing && (
-            <button
-              type="button"
-              className={data.status === "none" ? "primary-btn" : "ghost-btn ghost-btn-sm"}
-              onClick={() => void generate()}
-              disabled={generating || !data.hasNotes}
-            >
-              {generating
-                ? "Generating…"
-                : data.status === "none"
-                  ? "Generate day summary"
-                  : "Regenerate"}
-            </button>
-          )}
         </div>
       </div>
 
-      {shownError && <p className="day-summary-error">{shownError}</p>}
+      {error && <p className="day-summary-error">{error}</p>}
 
-      {data.stale && !generating && (
-        // §6 — never silently regenerate. Show what's stored, say the inputs
-        // moved, and let the reader decide.
+      {data.stale && (
+        // Flagged, never silently rewritten: re-run the runner for this day if
+        // the summary should catch up.
         <p className="muted day-summary-note">
           Notes for this day changed after this summary was written.
         </p>
       )}
 
-      {generating ? (
+      {!hasSummary ? (
         <p className="muted day-summary-note">
-          Reading the day&rsquo;s notes and writing the summary — this takes a
-          minute.
-        </p>
-      ) : data.status === "none" ? (
-        <p className="muted day-summary-note">
-          {data.configured
-            ? `${data.meetingCount} meeting${data.meetingCount === 1 ? "" : "s"} with notes${data.totalTimeLabel ? ` · ${data.totalTimeLabel}` : ""} — not summarized yet.`
-            : "Day summaries aren’t configured on this server (ANTHROPIC_API_KEY is unset)."}
+          {data.meetingCount} meeting{data.meetingCount === 1 ? "" : "s"} with
+          notes
+          {data.totalTimeLabel ? ` · ${data.totalTimeLabel}` : ""} — no summary
+          yet. The nightly runner writes one, or run it for this day with{" "}
+          <code>npx tsx run.ts --date …</code> in{" "}
+          <code>tools/day-summary</code>.
         </p>
       ) : editing ? (
         <div className="day-summary-edit">
@@ -262,7 +184,7 @@ export function DaySummaryCard({
         </>
       )}
 
-      {data.status === "ready" && data.generatedAtLabel && !editing && (
+      {hasSummary && data.generatedAtLabel && !editing && (
         <p className="day-summary-meta muted">
           Generated {data.generatedAtLabel}
           {data.model ? ` · ${data.model}` : ""}

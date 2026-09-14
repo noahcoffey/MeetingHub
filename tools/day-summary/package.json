@@ -1,0 +1,18 @@
+{
+  "name": "day-summary",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local Day Summary agent for Meeting Hub: reads one day's meeting-note context from /api/v1, writes a synthesis with Claude, pushes it back.",
+  "type": "module",
+  "scripts": {
+    "run": "tsx run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

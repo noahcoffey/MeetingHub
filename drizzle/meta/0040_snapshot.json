@@ -1,5 +1,5 @@
 {
-  "id": "76831956-c916-4814-bad4-ad586404ca0c",
+  "id": "68dd31c2-653d-40e5-a52b-be03821c2262",
   "prevId": "88c07de5-5f0a-457f-8e7b-ea52e15807bb",
   "version": "7",
   "dialect": "postgresql",
@@ -521,8 +521,7 @@
           "name": "markdown",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "''"
+          "notNull": true
         },
         "markdown_edited": {
           "name": "markdown_edited",
@@ -540,7 +539,7 @@
           "name": "generated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "input_fingerprint": {
           "name": "input_fingerprint",
@@ -548,20 +547,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
-        },
-        "status": {
-          "name": "status",
-          "type": "day_summary_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'ready'"
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -2829,15 +2814,6 @@
       "values": [
         "read",
         "write"
-      ]
-    },
-    "public.day_summary_status": {
-      "name": "day_summary_status",
-      "schema": "public",
-      "values": [
-        "generating",
-        "ready",
-        "failed"
       ]
     },
     "public.journal_stat_direction": {
