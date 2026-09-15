@@ -144,9 +144,6 @@ export default async function MeetingsPage({
     generatedAtLabel: daySummary.summary?.generatedAt
       ? formatGeneratedAt(daySummary.summary.generatedAt)
       : null,
-    hasNotes: daySummary.hasNotes,
-    meetingCount: daySummary.stats.meetingCount,
-    totalTimeLabel: daySummary.stats.totalTimeLabel,
   };
 
   // Month rows grouped into per-day sections, chronological.
