@@ -10,18 +10,12 @@ import {
   shiftDate,
   todayInAppTz,
 } from "@/lib/dates";
+import { initials } from "@/lib/initials";
 import { NewPersonForm } from "./new-person-form";
 
 export const dynamic = "force-dynamic";
 
 const QUIET_AFTER_DAYS = 30;
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] ?? "?";
-  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : "";
-  return (first + last).toUpperCase();
-}
 
 // "Jun 30", plus the year once it isn't this year's.
 function shortDate(d: Date, todayStr: string): string {

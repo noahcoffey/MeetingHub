@@ -2069,6 +2069,117 @@ input[type="checkbox"]:focus-visible {
 }
 .attendees {
   font-size: 0.85rem;
+  margin-top: 0.5rem;
+  min-width: 0;
+}
+/* Collapsed: avatars + names on ONE truncating line. `min-width: 0` on the
+   label is what keeps a long invite list from widening the header past the
+   viewport on mobile. */
+.attendees-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Shrink to fit: a full-width button parks the chevron at the far edge of a
+     wide header, reading as unrelated to the names it belongs to. */
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.2rem 0.3rem 0.2rem 0.2rem;
+  margin-left: -0.2rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.attendees-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.attendees-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.attendee-stack {
+  display: flex;
+  flex-shrink: 0;
+  padding-left: 5px; /* the overlap pulls each avatar left; keep the first flush */
+}
+.attendee-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent-fg);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.attendee-stack .attendee-avatar {
+  margin-left: -5px;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.attendees-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Its own span so the ellipsis eats names, never the count — that count is the
+   whole point of the collapsed line on a narrow screen. */
+.attendees-rest {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--faint);
+}
+.attendees-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--faint);
+  transition: transform 0.15s ease;
+}
+.attendees-chevron.is-open {
+  transform: rotate(180deg);
+}
+/* Expanded: one row per attendee, wrapping rather than overflowing. */
+.attendee-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.attendee-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+.attendee-name {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.attendee-email {
+  color: var(--faint);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 820px) {
+  /* Comfortable tap target for the expand toggle. */
+  .attendees-toggle {
+    min-height: 38px;
+  }
+  .attendee-row {
+    gap: 0.1rem 0.5rem;
+  }
 }
 
 /* 3-pane workspace: notes (center, edge-to-edge) + action rail (right) */

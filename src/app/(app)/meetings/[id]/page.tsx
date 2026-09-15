@@ -27,6 +27,7 @@ import { MeetingRail } from "./meeting-rail";
 import { RailResizeHandle, RailToggle } from "../../chrome";
 import { MeetingProjectPicker } from "./meeting-project-picker";
 import { MeetingTitle } from "./meeting-title";
+import { Attendees } from "./attendees";
 import { RelatedProjectsRail } from "./related-projects-rail";
 import { listRelationsForProject } from "@/lib/project-relations";
 import { getWorkspaceById, isFeatureEnabled } from "@/lib/workspaces";
@@ -139,14 +140,7 @@ export default async function MeetingDetailPage({
                   {formatPrettyDate(start)} · {formatTimeInTz(start)}
                   {end ? ` – ${formatTimeInTz(end)}` : ""}
                 </p>
-                {meeting.attendees.length > 0 && (
-                  <p className="muted attendees">
-                    {meeting.attendees
-                      .map((a) => a.name || a.email)
-                      .filter(Boolean)
-                      .join(", ")}
-                  </p>
-                )}
+                <Attendees attendees={meeting.attendees} />
               </header>
             </div>
           </div>
