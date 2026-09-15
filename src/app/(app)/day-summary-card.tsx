@@ -15,10 +15,6 @@ export type DaySummaryCardData = {
   edited: boolean;
   model: string | null;
   generatedAtLabel: string | null;
-  /** Some meeting that day has manual or generated notes. */
-  hasNotes: boolean;
-  meetingCount: number;
-  totalTimeLabel: string;
 };
 
 function SparkIcon() {
@@ -36,7 +32,7 @@ function SparkIcon() {
 // The day's synthesis, at the top of the day view — it's the lead, not an
 // appendix. Read-only apart from hand edits: summaries are written by the local
 // runner (tools/day-summary) and pushed in, so there is nothing to trigger from
-// here. Nothing renders at all on a day with no notes and no summary.
+// here. Nothing renders at all until a summary exists for the day.
 export function DaySummaryCard({ data }: { data: DaySummaryCardData }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -70,9 +66,9 @@ export function DaySummaryCard({ data }: { data: DaySummaryCardData }) {
   }
 
   const hasSummary = !!data.id;
-  // Nothing to show and nothing to explain: a day with no notes was never a
-  // candidate for a summary.
-  if (!hasSummary && !data.hasNotes) return null;
+  // No summary, nothing to say: the card is the summary, not a placeholder for
+  // one. The nightly runner writes it; an empty box only adds noise.
+  if (!hasSummary) return null;
 
   return (
     <section className="day-summary" aria-label="Day summary">
@@ -91,7 +87,7 @@ export function DaySummaryCard({ data }: { data: DaySummaryCardData }) {
             </span>
           )}
           {data.edited && <span className="badge">Edited</span>}
-          {hasSummary && !editing && (
+          {!editing && (
             <button
               type="button"
               className="row-action"
@@ -125,16 +121,7 @@ export function DaySummaryCard({ data }: { data: DaySummaryCardData }) {
         </p>
       )}
 
-      {!hasSummary ? (
-        <p className="muted day-summary-note">
-          {data.meetingCount} meeting{data.meetingCount === 1 ? "" : "s"} with
-          notes
-          {data.totalTimeLabel ? ` · ${data.totalTimeLabel}` : ""} — no summary
-          yet. The nightly runner writes one, or run it for this day with{" "}
-          <code>npx tsx run.ts --date …</code> in{" "}
-          <code>tools/day-summary</code>.
-        </p>
-      ) : editing ? (
+      {editing ? (
         <div className="day-summary-edit">
           <MarkdownEditor
             initialMarkdown={data.body}
@@ -184,7 +171,7 @@ export function DaySummaryCard({ data }: { data: DaySummaryCardData }) {
         </>
       )}
 
-      {hasSummary && data.generatedAtLabel && !editing && (
+      {data.generatedAtLabel && !editing && (
         <p className="day-summary-meta muted">
           Generated {data.generatedAtLabel}
           {data.model ? ` · ${data.model}` : ""}
