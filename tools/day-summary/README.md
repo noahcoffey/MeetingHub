@@ -6,7 +6,8 @@ everything that happened across a single day's meetings. Every night it:
 1. pulls one day's context from `GET /api/v1/day-summary-context` (each noted
    meeting's title, time, attendees, manual notes in full, and only the
    Summary / Decisions Made / Action Items sections of its AI-generated notes),
-2. has Claude write the summary,
+2. has Claude write the summary, via the **Claude Code CLI** — no Anthropic API
+   key anywhere in this package,
 3. pushes it back via `PUT /api/v1/day-summaries`.
 
 Summaries appear at the top of that day's **Meetings** view. Generation happens
@@ -34,29 +35,36 @@ Fill in `config.json`:
 |---|---|
 | `baseUrl` | Your Meeting Hub URL (prod, or `http://localhost:3000` to test) |
 | `apiToken` | An `mh_` token with **write** scope — mint one under Settings → API tokens. Restrict it to the workspaces below. |
-| `anthropicApiKey` | Optional. Leave `""` and the SDK resolves credentials itself — see **Anthropic credentials** below. |
-| `model` | Default `claude-opus-5` |
-| `maxOutputTokens` | Default `16000`. Adaptive thinking spends from the same budget; a truncated summary is a hard error, not a short one. |
+| `claudeBin` | Path to the Claude Code binary. Default `claude` (must be on `PATH`) — set an absolute path if launchd can't find it. |
+| `model` | Model alias or full name. Default `opus`. |
+| `effort` | Optional: `low`\|`medium`\|`high`\|`xhigh`\|`max`. Omit for Claude Code's default. |
+| `maxCostUsd` | Optional spend ceiling per invocation, passed as `--max-budget-usd`. |
 | `workspaces` | Workspace **names** to summarize (case-insensitive). This is the per-workspace enable/disable switch. |
 
 `config.json` is gitignored — it holds secrets.
 
-### Anthropic credentials
+The only credential here is the Meeting Hub `mh_` token.
 
-You do **not** have to put an API key in `config.json`. Leave `anthropicApiKey`
-empty and the SDK resolves credentials in this order:
+### How it talks to Claude
 
-1. `ANTHROPIC_API_KEY`
-2. `ANTHROPIC_AUTH_TOKEN`
-3. an OAuth profile from `ant auth login` (stored under `~/.config/anthropic/`)
+Generation shells out to the Claude Code CLI (`claude -p`), so it reuses the
+login you already have — **there is no Anthropic API key in this package, and
+no `ANTHROPIC_API_KEY` to export.** Usage bills the same way the rest of your
+Claude Code usage does; each run prints its cost.
 
-So `ant auth login` once is enough — no key anywhere in this directory or your
-environment. Check what's active with `ant auth status`.
+The invocation is deliberately locked down:
 
-Whichever you use, launchd doesn't read your shell profile for env vars; the
-plist runs `zsh -lc`, which loads `~/.zprofile`, so export env vars there. An
-`ant` OAuth profile lives on disk and needs no env var at all, which makes it
-the least fragile option under launchd.
+| Flag | Why |
+|---|---|
+| `--safe-mode` | Claude Code would otherwise load this repo's `CLAUDE.md`, skills, plugins, hooks, MCP servers and agents into the run. None of that belongs in a summarization prompt. Auth and model selection still work normally — unlike `--bare`, which refuses to read your existing login. |
+| `--strict-mcp-config` | Belt and braces on the MCP half of the above. |
+| `--tools ""` | No tools at all. This is pure text generation. |
+| `--no-session-persistence` | Session transcripts are written to disk by default and would contain the day's note bodies verbatim. Real work content stays out of `~/.claude`. |
+| `--permission-prompts none` | Nothing can block waiting for a human — this runs from launchd at 03:00. |
+| `--output-format json` | Gives `stop_reason` / `is_error`, so a refusal or a truncated body is caught instead of being silently stored as the record. |
+
+The prompt goes in on stdin rather than argv, since a full day of notes can be
+larger than the argv limit, and the run happens in a temp directory.
 
 ## Run manually
 
@@ -110,8 +118,9 @@ launchd notes:
   happens before the next midnight it still resolves to the same day.
 - If the Mac is **powered off** through the window, that firing is skipped —
   backfill with `npx tsx run.ts --date <day>`.
-- Credentials under launchd: see **Anthropic credentials** above. An
-  `ant auth login` profile is the least fragile, since it needs no env var.
+- launchd doesn't always inherit your interactive `PATH`. The plist runs
+  `zsh -lc` so `~/.zprofile` is loaded, but if `claude` still isn't found, set
+  `claudeBin` in `config.json` to its absolute path (`which claude`).
 
 To unschedule: `launchctl unload ~/Library/LaunchAgents/com.meetinghub.day-summary.plist`.
 
@@ -119,8 +128,9 @@ To unschedule: `launchctl unload ~/Library/LaunchAgents/com.meetinghub.day-summa
 
 - The runner logs one line per workspace (sizes and statuses only) — never
   summary or context content.
-- A refusal from the model's safety classifiers is automatically retried on
-  Anthropic's recommended fallback model (server-side `fallbacks: "default"`).
+- A refusal, an API error, or a body truncated at `max_tokens` fails the run
+  loudly rather than pushing a half-finished entry — a day summary becomes the
+  permanent record of that day.
 - The prompt's guardrails in `prompt.ts` exist because AI-generated notes are
   transcript reconstructions that mangle proper nouns. A day summary becomes
   the record, so the prompt forbids introducing any name, date or figure that

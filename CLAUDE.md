@@ -333,7 +333,8 @@ Defined in `src/db/schema.ts`. Core tables:
   *across* the day's meetings — the connections no single meeting contains — not a digest of
   per-meeting summaries. Like `weekly_summaries` this table is storage/serving only: generation
   happens OUTSIDE the app, in the launchd-scheduled local runner `tools/day-summary` (nightly, for
-  the day that just ended; `--date` backfills any past day). The runner reads
+  the day that just ended; `--date` backfills any past day). That runner shells out to the **Claude
+  Code CLI** rather than the Anthropic SDK, so no API key exists on either side. The runner reads
   `GET /api/v1/day-summary-context` and pushes via upserting `PUT /api/v1/day-summaries`.
   The context aggregate (`lib/day-summary-context.ts`) prepares *everything*, so the runner stays a
   thin model-call client: the meeting set is `getMeetingsForDate` — the **same** query the day view
