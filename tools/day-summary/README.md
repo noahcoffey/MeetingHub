@@ -34,12 +34,29 @@ Fill in `config.json`:
 |---|---|
 | `baseUrl` | Your Meeting Hub URL (prod, or `http://localhost:3000` to test) |
 | `apiToken` | An `mh_` token with **write** scope — mint one under Settings → API tokens. Restrict it to the workspaces below. |
-| `anthropicApiKey` | Anthropic API key; leave `""` to use the `ANTHROPIC_API_KEY` env var |
+| `anthropicApiKey` | Optional. Leave `""` and the SDK resolves credentials itself — see **Anthropic credentials** below. |
 | `model` | Default `claude-opus-5` |
 | `maxOutputTokens` | Default `16000`. Adaptive thinking spends from the same budget; a truncated summary is a hard error, not a short one. |
 | `workspaces` | Workspace **names** to summarize (case-insensitive). This is the per-workspace enable/disable switch. |
 
 `config.json` is gitignored — it holds secrets.
+
+### Anthropic credentials
+
+You do **not** have to put an API key in `config.json`. Leave `anthropicApiKey`
+empty and the SDK resolves credentials in this order:
+
+1. `ANTHROPIC_API_KEY`
+2. `ANTHROPIC_AUTH_TOKEN`
+3. an OAuth profile from `ant auth login` (stored under `~/.config/anthropic/`)
+
+So `ant auth login` once is enough — no key anywhere in this directory or your
+environment. Check what's active with `ant auth status`.
+
+Whichever you use, launchd doesn't read your shell profile for env vars; the
+plist runs `zsh -lc`, which loads `~/.zprofile`, so export env vars there. An
+`ant` OAuth profile lives on disk and needs no env var at all, which makes it
+the least fragile option under launchd.
 
 ## Run manually
 
@@ -93,10 +110,8 @@ launchd notes:
   happens before the next midnight it still resolves to the same day.
 - If the Mac is **powered off** through the window, that firing is skipped —
   backfill with `npx tsx run.ts --date <day>`.
-- If `config.json` uses the env-var fallback for the Anthropic key, remember
-  launchd doesn't read your shell profile for env vars — the plist runs
-  `zsh -lc`, which loads `~/.zprofile`, so export it there (or put the key in
-  `config.json`).
+- Credentials under launchd: see **Anthropic credentials** above. An
+  `ant auth login` profile is the least fragile, since it needs no env var.
 
 To unschedule: `launchctl unload ~/Library/LaunchAgents/com.meetinghub.day-summary.plist`.
 

@@ -1,6 +1,7 @@
 {
   "baseUrl": "https://meetinghub.example.com",
   "apiToken": "mh_...",
+  "_comment_auth": "Leave anthropicApiKey empty to use ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or an `ant auth login` profile.",
   "anthropicApiKey": "",
   "model": "claude-opus-5",
   "maxOutputTokens": 16000,

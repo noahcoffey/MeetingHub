@@ -47,9 +47,12 @@ function loadConfig(): Config {
   if (!Array.isArray(cfg.workspaces) || cfg.workspaces.length === 0) {
     throw new Error("config: workspaces must list at least one workspace name");
   }
-  if (!cfg.anthropicApiKey && !process.env.ANTHROPIC_API_KEY) {
-    throw new Error("config: set anthropicApiKey or the ANTHROPIC_API_KEY env var");
-  }
+  // Deliberately NOT requiring an Anthropic key here. The SDK resolves
+  // credentials itself, in order: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
+  // then an OAuth profile written by `ant auth login`. A profile means no key
+  // in this file and none in the environment, so let a missing key through and
+  // let the SDK decide — a real auth failure surfaces as a 401 on the first
+  // call, which is clearer than a config error that's wrong half the time.
   return cfg;
 }
 
@@ -103,9 +106,11 @@ async function main(): Promise<void> {
   const model = cfg.model ?? "claude-opus-5";
   const maxTokens = cfg.maxOutputTokens ?? 16000;
   const day = parseArgs(process.argv.slice(2)).date ?? targetDay();
-  const client = new Anthropic({
-    apiKey: cfg.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
-  });
+  // Passing apiKey: undefined would override the SDK's own resolution, so only
+  // pass the option when config.json actually sets one.
+  const client = cfg.anthropicApiKey
+    ? new Anthropic({ apiKey: cfg.anthropicApiKey })
+    : new Anthropic();
 
   const available = await getWorkspaces(cfg);
   const byName = new Map(available.map((w) => [w.name.toLowerCase(), w]));
