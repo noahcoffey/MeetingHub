@@ -18,6 +18,7 @@ import { NoteBody } from "./note-body";
 import { NoteTitle } from "./note-title";
 import { NotesRail } from "./notes-rail";
 import { DeleteNoteButton } from "./delete-note-button";
+import { ShareNoteButton } from "./share-note-button";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,10 @@ export default async function NoteDetailPage({
             <div className="notes-col">
               <div className="detail-back">
                 <Link href="/notes">‹ Back to Notes</Link>
-                <DeleteNoteButton noteId={note.id} />
+                <div className="detail-back-actions">
+                  <ShareNoteButton noteId={note.id} initialSlug={note.shareSlug} />
+                  <DeleteNoteButton noteId={note.id} />
+                </div>
               </div>
               <header className="detail-header">
                 <div className="detail-title-row">

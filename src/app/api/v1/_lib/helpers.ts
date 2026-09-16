@@ -157,3 +157,14 @@ export async function readJsonBody(
     return { ok: false, res: err("invalid json", 400) };
   }
 }
+
+// A note row as v1 serves it. `share_slug` is a read capability — anyone with
+// the URL reads the note — so it never crosses the token/MCP boundary; callers
+// get the boolean instead. Sharing is a UI-only action (there is no v1 route to
+// turn it on or off).
+export function toV1Note<T extends { shareSlug: string | null; sharedAt: Date | null }>(
+  note: T,
+): Omit<T, "shareSlug" | "sharedAt"> & { shared: boolean } {
+  const { shareSlug, sharedAt: _sharedAt, ...rest } = note;
+  return { ...rest, shared: shareSlug !== null };
+}

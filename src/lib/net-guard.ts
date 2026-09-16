@@ -132,9 +132,16 @@ async function assertResolvesPublic(url: URL): Promise<void> {
   }
 }
 
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
+// `truncate` flips the cap from a hard error into a stop-reading point: the ICS
+// import wants to fail loudly on an oversized feed, while the link-title fetch
+// only ever needs the <head> and should happily give up on the rest.
+async function readCapped(
+  res: Response,
+  maxBytes: number,
+  truncate: boolean,
+): Promise<string> {
   const len = Number(res.headers.get("content-length") ?? "0");
-  if (len > maxBytes) throw new BlockedUrlError("response too large");
+  if (len > maxBytes && !truncate) throw new BlockedUrlError("response too large");
   const body = res.body;
   if (!body) return "";
   const reader = body.getReader();
@@ -147,7 +154,9 @@ async function readCapped(res: Response, maxBytes: number): Promise<string> {
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel();
-        throw new BlockedUrlError("response too large");
+        if (!truncate) throw new BlockedUrlError("response too large");
+        chunks.push(Buffer.from(value));
+        break;
       }
       chunks.push(Buffer.from(value));
     }
@@ -163,6 +172,7 @@ export async function safeFetchText(
     maxBytes?: number;
     timeoutMs?: number;
     headers?: Record<string, string>;
+    truncate?: boolean;
   } = {},
 ): Promise<string> {
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -186,7 +196,7 @@ export async function safeFetchText(
         continue;
       }
       if (!res.ok) throw new Error(`fetch failed with status ${res.status}`);
-      return await readCapped(res, maxBytes);
+      return await readCapped(res, maxBytes, opts.truncate ?? false);
     }
     throw new BlockedUrlError("too many redirects");
   } finally {
