@@ -78,10 +78,10 @@ export default async function MeetingDetailPage({
   const peopleEnabled = workspace ? isFeatureEnabled(workspace, "people") : false;
   // Reuses the people the agenda already matched — no extra query. Title-linked
   // people carry no email and so never claim an attendee row.
-  const personIdByEmail: Record<string, string> = {};
+  const personByEmail: Record<string, { id: string; name: string }> = {};
   if (peopleEnabled) {
     for (const p of agenda.people) {
-      if (p.email) personIdByEmail[p.email.toLowerCase()] = p.id;
+      if (p.email) personByEmail[p.email.toLowerCase()] = { id: p.id, name: p.name };
     }
   }
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
@@ -151,7 +151,7 @@ export default async function MeetingDetailPage({
                 </p>
                 <Attendees
                   attendees={meeting.attendees}
-                  personIdByEmail={personIdByEmail}
+                  personByEmail={personByEmail}
                 />
               </header>
             </div>
