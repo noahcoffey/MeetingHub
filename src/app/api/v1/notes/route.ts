@@ -10,6 +10,7 @@ import {
   err,
   readJsonBody,
   resolveWorkspace,
+  toV1Note,
   withV1,
 } from "../_lib/helpers";
 
@@ -59,5 +60,8 @@ export const POST = withV1({ write: true }, async (req, _ctx, principal) => {
   if (typeof body === "string" && body !== "") {
     await saveNoteBody(note.id, body, null);
   }
-  return NextResponse.json({ item: await getNote(note.id) }, { status: 201 });
+  return NextResponse.json(
+    { item: toV1Note((await getNote(note.id))!) },
+    { status: 201 },
+  );
 });

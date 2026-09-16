@@ -1,4 +1,5 @@
 import "server-only";
+import { randomBytes } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { searchNotes } from "@/lib/search";
@@ -102,6 +103,57 @@ export async function updateNoteTitle(
     .set({ title, updatedAt: new Date() })
     .where(eq(notes.id, id))
     .returning();
+  return n;
+}
+
+// ---- public sharing ----
+
+// 128 bits of randomness, base64url — unguessable, and the whole access control
+// for /s/<slug>: there is no other way in and nothing else is reachable from it.
+export const SHARE_SLUG_RE = /^[A-Za-z0-9_-]{22}$/;
+
+function newShareSlug(): string {
+  return randomBytes(16).toString("base64url");
+}
+
+// Flipping sharing on mints a NEW slug every time (never reuses the old one, so
+// a link that was turned off stays dead); flipping it off clears the slug.
+// Touches NEITHER timestamp: notesUpdatedAt would 409 an open editor, and
+// updatedAt is the note's own "last edited" — bumping it would make the public
+// page read "Updated today" and float the note to the top of /notes for what is
+// a visibility change, not an edit. (Attach/detach behave the same way.)
+export async function setNoteShared(
+  id: string,
+  shared: boolean,
+): Promise<Note | undefined> {
+  const [n] = await db
+    .update(notes)
+    .set(
+      shared
+        ? { shareSlug: newShareSlug(), sharedAt: new Date() }
+        : { shareSlug: null, sharedAt: null },
+    )
+    .where(eq(notes.id, id))
+    .returning();
+  return n;
+}
+
+export type SharedNote = {
+  title: string;
+  notes: string;
+  updatedAt: Date;
+};
+
+// The /s/<slug> page's entire query. Returns title + body and nothing else —
+// no ids, no workspace, no attachments — so the public surface can't be walked
+// back into the rest of the app.
+export async function getSharedNote(slug: string): Promise<SharedNote | undefined> {
+  if (!SHARE_SLUG_RE.test(slug)) return undefined;
+  const [n] = await db
+    .select({ title: notes.title, notes: notes.notes, updatedAt: notes.updatedAt })
+    .from(notes)
+    .where(eq(notes.shareSlug, slug))
+    .limit(1);
   return n;
 }
 
@@ -220,6 +272,7 @@ export type NoteSummary = {
   id: string;
   title: string;
   updatedAt: Date;
+  shared: boolean;
   projects: { id: string; name: string }[];
   meetingCount: number;
 };
@@ -254,7 +307,7 @@ async function hydrateAttachments(
   if (all.length === 0) return [];
 
   const ids = all.map((n) => n.id);
-  const [projectRows, meetingRows] = await Promise.all([
+  const [projectRows, meetingRows, shareRows] = await Promise.all([
     db
       .select({
         noteId: noteProjects.noteId,
@@ -269,7 +322,15 @@ async function hydrateAttachments(
       .select({ noteId: noteMeetings.noteId })
       .from(noteMeetings)
       .where(inArray(noteMeetings.noteId, ids)),
+    // Search hits arrive without the column, so read it here for both callers.
+    db
+      .select({ id: notes.id, shareSlug: notes.shareSlug })
+      .from(notes)
+      .where(inArray(notes.id, ids)),
   ]);
+  const sharedIds = new Set(
+    shareRows.filter((r) => r.shareSlug !== null).map((r) => r.id),
+  );
 
   const projectsByNote = new Map<string, { id: string; name: string }[]>();
   for (const row of projectRows) {
@@ -284,6 +345,7 @@ async function hydrateAttachments(
 
   return all.map((n) => ({
     ...n,
+    shared: sharedIds.has(n.id),
     projects: projectsByNote.get(n.id) ?? [],
     meetingCount: meetingCountByNote.get(n.id) ?? 0,
   }));

@@ -75,6 +75,10 @@ on.
 | POST | `/api/v1/notes?workspace=` | `{ title?, body?, projectId?, meetingId? }` (same-workspace attach at create only) |
 | GET | `/api/v1/notes/:id` | Full row; body is in `notes` |
 | PATCH | `/api/v1/notes/:id` | `{ title?, body? }` |
+
+Notes carry a `shared` boolean (the note is published at a public `/s/<slug>` URL). The slug itself
+is deliberately **never served over the API** — it grants read access to anyone holding it — and
+there is no endpoint to turn sharing on or off; that lives in the app UI only.
 | GET | `/api/v1/summary-context?workspace=&weekStart=` | Aggregate week payload for the Sunday-Summary runner |
 | GET | `/api/v1/summaries?workspace=` | Weekly summaries, meta only (no markdown), newest week first |
 | PUT | `/api/v1/summaries?workspace=` | Upsert a summary by `(workspace, weekStart)` — 201 created / 200 overwritten |

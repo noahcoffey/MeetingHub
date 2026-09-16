@@ -450,6 +450,12 @@ export const notes = pgTable(
     notesUpdatedAt: timestamp("notes_updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Public sharing: non-null slug = this note is readable, unauthenticated, at
+    // /s/<slug>. Nullable + unique (Postgres allows many NULLs), and turning
+    // sharing off clears it — so a revoked link is dead, and re-sharing mints a
+    // new one rather than resurrecting a URL that may have been passed around.
+    shareSlug: text("share_slug").unique(),
+    sharedAt: timestamp("shared_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

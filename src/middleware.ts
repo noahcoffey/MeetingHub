@@ -47,11 +47,18 @@ export default auth((req) => {
     }
   }
 
+  // Publicly shared notes (/s/<slug>) are the app's one unauthenticated HTML
+  // surface. They skip auth gating HERE rather than being excluded from the
+  // matcher, so the page still gets the production CSP. The slug is the whole
+  // access check and nothing else is reachable from that page — see
+  // lib/notes.ts getSharedNote.
+  const isSharedNote = nextUrl.pathname.startsWith("/s/");
+
   // Auth gating (was the authorized() callback).
   const isOnLogin = nextUrl.pathname.startsWith("/login");
   if (isOnLogin) {
     if (isLoggedIn) return NextResponse.redirect(new URL("/", nextUrl));
-  } else if (!isLoggedIn) {
+  } else if (!isLoggedIn && !isSharedNote) {
     const login = new URL("/login", nextUrl);
     login.searchParams.set("callbackUrl", nextUrl.pathname + nextUrl.search);
     return NextResponse.redirect(login);

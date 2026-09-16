@@ -28,13 +28,24 @@ This file is the short, durable orientation for anyone (human or AI) working in 
 - Notes editor: `meetings/[id]/markdown-editor.tsx` is a TipTap (ProseMirror) live
   markdown editor; `notes-editor.tsx` wraps it with the offline autosave/draft/conflict logic. Notes
   round-trip as a markdown string via `tiptap-markdown`, so the persistence layer is editor-agnostic.
+  Pasting a bare URL into it inserts the link straight away, then swaps the link *text* for the
+  page title fetched from `GET /api/link-title` (SSRF-guarded via `lib/net-guard.ts`, parsed by the
+  pure `lib/link-title.ts`) — so the markdown ends up `[Title](url)`. Fire-and-forget: any failure,
+  or an edit to that text meanwhile, just leaves the bare URL. Two things that regressed in
+  development and are pinned by `e2e/note-link-and-share.spec.ts`: the link mark is **inclusive**
+  (tiptap ties that to its `autolink` option), so both transactions `removeStoredMark(link)` or the
+  rest of the sentence gets typed *into* the link; and only a lone http(s) token with an empty
+  selection is intercepted — a URL pasted over a selection stays Link's own `linkOnPaste` job.
 - `src/auth.ts` — NextAuth providers (db + bcrypt). `auth.config.ts` — edge-safe config shared with
   middleware. `middleware.ts` — does route gating **plus** the CSRF cross-origin write check and the
   production CSP (per-request nonce + `strict-dynamic`); auth/health/ingest/webauthn-authenticate are
-  excluded from the matcher.
+  excluded from the matcher. **`/s/<slug>` (a publicly shared note) is the one unauthenticated HTML
+  surface**, and it deliberately stays INSIDE the matcher — it skips the login redirect via a
+  pathname check in the middleware body, so it still gets the CSP. See "Note sharing" below.
 - `src/lib/` — server logic, kept out of route handlers: `meetings.ts`, `action-items.ts`, `journal.ts`,
   `projects.ts` (+ `project-links.ts`), `notes.ts`, `people.ts`, `task-dependencies.ts`, `dashboard.ts`,
   `ics-calendar.ts`, `ingest.ts`, `search.ts`, `webauthn.ts`, `login-throttle.ts`, `dates.ts`,
+  `link-title.ts` (pure HTML→title parse for the paste-a-URL affordance),
   `google-auth.ts` (shared Google OAuth plumbing) + `google-calendar.ts` / `google-drive.ts` +
   `drive.ts` (Drive folder hierarchy/protection — see "Drive files" below),
   `summaries.ts` + `summary-context.ts` (Sunday-Summary storage + the week-context aggregate).
@@ -274,7 +285,8 @@ Defined in `src/db/schema.ts`. Core tables:
 - `notes` — first-class reference notes: `title` + markdown `notes` body with `notes_updated_at`
   (same autosave/conflict contract as meeting/journal notes, so the shared `NotesEditor` is reused).
   Join tables `note_projects` / `note_meetings` (composite PK, FKs cascade) attach a note to any
-  number of projects and meetings; deleting either side removes only the attachment. Top-level
+  number of projects and meetings; deleting either side removes only the attachment. **Sharing**: nullable unique `share_slug` (+ `shared_at`) — non-null means the note is
+  readable, unauthenticated, at `/s/<slug>`; see "Note sharing" below. Top-level
   `/notes` list + `/notes/[id]` full-page editor whose rail manages attachments (projects via
   select, meetings via `/api/search` type-ahead) — the project hub and meeting rail list attached
   notes. Replaced the old `project_notes` running log (migrated in `0016`, dropped in `0017`).
@@ -373,6 +385,30 @@ Defined in `src/db/schema.ts`. Core tables:
 - All secrets in env (`.env.local` for dev, Dokploy env for prod). See `.env.example`.
 - Schema is designed so future additions (embeddings, transcripts, note ingest, a task manager)
   are *additive*, never a rewrite. Don't add those tables/columns now, but don't block them.
+
+## Note sharing
+
+A single note can be published at `/s/<slug>` for anyone with the link. The slug (16 random bytes,
+base64url) **is** the entire access check, so the surface is kept deliberately narrow:
+
+- `lib/notes.ts` `getSharedNote(slug)` validates the slug shape, then selects **title + body +
+  updatedAt only** — no ids, no workspace, no attachments — so the page can't be walked back into
+  the rest of the app. `setNoteShared(id, on)` mints a **new** slug every time sharing is turned on
+  and clears it when turned off, so a revoked link is dead for good; it touches **neither**
+  timestamp — `notes_updated_at` would 409 an open editor, and bumping `updated_at` for a
+  visibility change would float the note to the top of `/notes` and make the public page read
+  "Updated today" (attach/detach behave the same way).
+- `src/app/s/[slug]/` is outside the `(app)` route group, so it inherits only the root layout: no
+  nav, no rail, no command palette. `force-dynamic` (revocation takes effect on the next request)
+  and `robots: noindex`. A bad slug and a revoked one render the same "Link not available".
+- `middleware.ts` skips the login redirect for `/s/` **in the function body, not the matcher**, so
+  the page still gets the production CSP.
+- UI: `notes/[id]/share-note-button.tsx` (Private/Public + copy link), `POST`/`DELETE
+  /api/notes/[id]/share` (session-authed, inside the matcher so the CSRF origin check applies), and
+  a "Public" tag on the `/notes` list row. **No v1/MCP exposure**: there is no API route to toggle
+  sharing, and `toV1Note` in `api/v1/_lib/helpers.ts` strips `share_slug`/`shared_at` from every
+  served note (the slug is a read capability, so it must not cross the token boundary) — API
+  callers see a `shared` boolean.
 
 ## Search
 

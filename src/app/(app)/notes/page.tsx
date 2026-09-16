@@ -65,6 +65,25 @@ export default async function NotesPage({
               <Link href={`/notes/${n.id}`} className="note-row">
                 <span className="note-row-title">{n.title || "Untitled"}</span>
                 <span className="note-row-meta">
+                  {n.shared && (
+                    <span className="note-shared-tag" title="Has a public link">
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        stroke="currentColor"
+                        width="11"
+                        height="11"
+                        aria-hidden
+                      >
+                        <circle cx="10" cy="10" r="7" strokeWidth="1.6" />
+                        <path
+                          d="M3 10h14M10 3c4 4 4 10 0 14M10 3c-4 4-4 10 0 14"
+                          strokeWidth="1.6"
+                        />
+                      </svg>
+                      Public
+                    </span>
+                  )}
                   {n.projects.map((p) => (
                     <span key={p.id} className="note-chip">
                       {p.name}

@@ -5,6 +5,7 @@ import {
   checkRowWorkspace,
   err,
   readJsonBody,
+  toV1Note,
   withV1,
 } from "../../_lib/helpers";
 
@@ -18,7 +19,7 @@ export const GET = withV1({}, async (_req, ctx, principal) => {
   if (!ws.ok) return ws.res;
   const disabled = checkFeature(ws.workspace, "notes");
   if (disabled) return disabled;
-  return NextResponse.json({ item });
+  return NextResponse.json({ item: toV1Note(item) });
 });
 
 export const PATCH = withV1({ write: true }, async (req, ctx, principal) => {
@@ -46,5 +47,5 @@ export const PATCH = withV1({ write: true }, async (req, ctx, principal) => {
   // documented last-write-wins.
   if (wantsBody) await saveNoteBody(id, body as string, null);
 
-  return NextResponse.json({ item: await getNote(id) });
+  return NextResponse.json({ item: toV1Note((await getNote(id))!) });
 });

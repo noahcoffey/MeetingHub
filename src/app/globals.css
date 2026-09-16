@@ -2033,6 +2033,8 @@ input[type="checkbox"]:focus-visible {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+  /* Back link + Share + Delete don't fit on one 320px line. */
+  flex-wrap: wrap;
 }
 .meeting-delete-btn {
   background: none;
@@ -8037,4 +8039,147 @@ html {
   margin: 0.85rem 0 0;
   font-size: 0.75rem;
   color: var(--faint);
+}
+
+/* ---- public shared note (/s/<slug>) --------------------------------------
+   Standalone page: no app chrome, no nav, just the note on a plain reading
+   column. Shares the app's tokens so it tracks light/dark like everything
+   else. */
+.share-page {
+  min-height: 100dvh;
+  padding: clamp(24px, 6vw, 64px) 16px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  background: var(--bg);
+  color: var(--text);
+}
+.share-card {
+  width: 100%;
+  max-width: 720px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: clamp(20px, 5vw, 40px);
+}
+.share-head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+}
+.share-head h1 {
+  font-size: clamp(1.4rem, 4vw, 1.9rem);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+.share-meta {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.share-empty {
+  color: var(--faint);
+  font-style: italic;
+}
+.share-foot {
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+
+/* ---- note sharing (button + modal) ---- */
+.detail-back-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.share-btn:hover {
+  color: var(--text);
+}
+.share-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.share-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+.share-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.share-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.share-option input {
+  margin-top: 0.15rem;
+  accent-color: var(--accent);
+}
+.share-option strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.share-option em {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  font-style: normal;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.share-url-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+.share-url {
+  margin-top: 0;
+  font-size: 0.82rem;
+  /* Without this the input's intrinsic width wins over width:100% and pushes
+     the modal (and the page) wider than a 320px viewport. */
+  min-width: 0;
+}
+.share-note-hint {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+}
+.share-error {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+/* "Public" marker on the /notes list */
+.note-shared-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--muted);
 }
