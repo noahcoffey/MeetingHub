@@ -2167,6 +2167,19 @@ input[type="checkbox"]:focus-visible {
   color: var(--text);
   overflow-wrap: anywhere;
 }
+/* Attendees with a person record link to it; the rest are plain text, so the
+   link needs to read as one without a permanent underline on every name. */
+.attendee-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.attendee-link:hover,
+.attendee-link:focus-visible {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
 .attendee-email {
   color: var(--faint);
   font-size: 0.78rem;
