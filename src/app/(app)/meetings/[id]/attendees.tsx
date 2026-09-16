@@ -6,6 +6,7 @@ import type { Attendee } from "@/db/schema";
 import { initials } from "@/lib/initials";
 
 type Entry = { key: string; name: string; email: string; personId: string | null };
+type LinkedPerson = { id: string; name: string };
 
 // Attendees arrive from the calendar with every field optional, and a long
 // invite list would otherwise run off the page. Collapsed, this is one
@@ -14,7 +15,7 @@ const COLLAPSED_AVATARS = 4;
 
 function toEntries(
   attendees: Attendee[],
-  personIdByEmail: Record<string, string>,
+  personByEmail: Record<string, LinkedPerson>,
 ): Entry[] {
   const seen = new Set<string>();
   const out: Entry[] = [];
@@ -25,13 +26,17 @@ function toEntries(
     const key = email.toLowerCase() || name.toLowerCase() || `i${i}`;
     if (seen.has(key)) return;
     seen.add(key);
+    // Only an email match: a person linked to this meeting by title (a
+    // recurring forum) is not any one of the attendees.
+    const person = personByEmail[email.toLowerCase()] ?? null;
     out.push({
       key,
-      name: name || email,
+      // The People record is the name the user chose, so it wins over whatever
+      // the calendar sent — which is often nothing, leaving the email's local
+      // part standing in for a name. The address is still on the expanded row.
+      name: person?.name.trim() || name || email,
       email,
-      // Only an email match: a person linked to this meeting by title (a
-      // recurring forum) is not any one of the attendees.
-      personId: personIdByEmail[email.toLowerCase()] ?? null,
+      personId: person?.id ?? null,
     });
   });
   return out;
@@ -47,14 +52,14 @@ function Avatar({ entry }: { entry: Entry }) {
 
 export function Attendees({
   attendees,
-  personIdByEmail = {},
+  personByEmail = {},
 }: {
   attendees: Attendee[];
-  /** Lowercased email → person id, for the attendees who have a person record. */
-  personIdByEmail?: Record<string, string>;
+  /** Lowercased email → person record, for the attendees the workspace knows. */
+  personByEmail?: Record<string, LinkedPerson>;
 }) {
   const [open, setOpen] = useState(false);
-  const entries = toEntries(attendees, personIdByEmail);
+  const entries = toEntries(attendees, personByEmail);
   if (entries.length === 0) return null;
 
   const shown = entries.slice(0, COLLAPSED_AVATARS);
