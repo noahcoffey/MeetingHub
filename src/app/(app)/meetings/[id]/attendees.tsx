@@ -1,17 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { Attendee } from "@/db/schema";
 import { initials } from "@/lib/initials";
 
-type Entry = { key: string; name: string; email: string };
+type Entry = { key: string; name: string; email: string; personId: string | null };
 
 // Attendees arrive from the calendar with every field optional, and a long
 // invite list would otherwise run off the page. Collapsed, this is one
 // truncating line; clicking opens the full roster with emails.
 const COLLAPSED_AVATARS = 4;
 
-function toEntries(attendees: Attendee[]): Entry[] {
+function toEntries(
+  attendees: Attendee[],
+  personIdByEmail: Record<string, string>,
+): Entry[] {
   const seen = new Set<string>();
   const out: Entry[] = [];
   attendees.forEach((a, i) => {
@@ -21,7 +25,14 @@ function toEntries(attendees: Attendee[]): Entry[] {
     const key = email.toLowerCase() || name.toLowerCase() || `i${i}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ key, name: name || email, email });
+    out.push({
+      key,
+      name: name || email,
+      email,
+      // Only an email match: a person linked to this meeting by title (a
+      // recurring forum) is not any one of the attendees.
+      personId: personIdByEmail[email.toLowerCase()] ?? null,
+    });
   });
   return out;
 }
@@ -34,9 +45,16 @@ function Avatar({ entry }: { entry: Entry }) {
   );
 }
 
-export function Attendees({ attendees }: { attendees: Attendee[] }) {
+export function Attendees({
+  attendees,
+  personIdByEmail = {},
+}: {
+  attendees: Attendee[];
+  /** Lowercased email → person id, for the attendees who have a person record. */
+  personIdByEmail?: Record<string, string>;
+}) {
   const [open, setOpen] = useState(false);
-  const entries = toEntries(attendees);
+  const entries = toEntries(attendees, personIdByEmail);
   if (entries.length === 0) return null;
 
   const shown = entries.slice(0, COLLAPSED_AVATARS);
@@ -80,7 +98,13 @@ export function Attendees({ attendees }: { attendees: Attendee[] }) {
           {entries.map((e) => (
             <li key={e.key} className="attendee-row">
               <Avatar entry={e} />
-              <span className="attendee-name">{e.name}</span>
+              {e.personId ? (
+                <Link className="attendee-name attendee-link" href={`/people/${e.personId}`}>
+                  {e.name}
+                </Link>
+              ) : (
+                <span className="attendee-name">{e.name}</span>
+              )}
               {e.email && e.email !== e.name && (
                 <span className="attendee-email">{e.email}</span>
               )}

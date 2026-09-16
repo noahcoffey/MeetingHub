@@ -75,6 +75,15 @@ export default async function MeetingDetailPage({
     meeting.projectId ? listRelationsForProject(meeting.projectId) : [],
   ]);
   const projectsEnabled = workspace ? isFeatureEnabled(workspace, "projects") : false;
+  const peopleEnabled = workspace ? isFeatureEnabled(workspace, "people") : false;
+  // Reuses the people the agenda already matched — no extra query. Title-linked
+  // people carry no email and so never claim an attendee row.
+  const personIdByEmail: Record<string, string> = {};
+  if (peopleEnabled) {
+    for (const p of agenda.people) {
+      if (p.email) personIdByEmail[p.email.toLowerCase()] = p.id;
+    }
+  }
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name }));
   const clientItems: ClientItem[] = open.map(toClientItem);
 
@@ -140,7 +149,10 @@ export default async function MeetingDetailPage({
                   {formatPrettyDate(start)} · {formatTimeInTz(start)}
                   {end ? ` – ${formatTimeInTz(end)}` : ""}
                 </p>
-                <Attendees attendees={meeting.attendees} />
+                <Attendees
+                  attendees={meeting.attendees}
+                  personIdByEmail={personIdByEmail}
+                />
               </header>
             </div>
           </div>
