@@ -5351,6 +5351,64 @@ input[type="checkbox"]:focus-visible {
 .incoming-match select {
   min-width: 13rem;
 }
+/* ingest log (Settings → Ingest log) */
+.ingest-source code {
+  font-size: 0.74rem;
+  word-break: break-all;
+}
+.ingest-outcome {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.55rem;
+}
+.ingest-pill,
+.ingest-flag {
+  display: inline-block;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--bg);
+  white-space: nowrap;
+}
+.ingest-pill.is-matched_written {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.ingest-pill.is-matched_not_written,
+.ingest-flag.is-warn {
+  color: var(--warn, #b45309);
+  border-color: color-mix(in srgb, var(--warn, #b45309) 45%, var(--border));
+}
+.ingest-pill.is-reassigned {
+  color: var(--accent);
+}
+.ingest-target {
+  margin-top: 0.5rem;
+  font-size: 0.86rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+.ingest-target a {
+  font-weight: 600;
+}
+.ingest-orig {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+}
+.ingest-done {
+  margin-top: 0.5rem;
+  font-size: 0.86rem;
+  color: var(--accent);
+}
+.ingest-match select {
+  min-width: 9rem;
+}
 .skipped-when {
   font-size: 0.78rem;
   color: var(--faint);

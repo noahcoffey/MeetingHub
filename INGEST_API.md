@@ -71,6 +71,15 @@ client and send it as `sourceId`.** That's the join key.
      match picker lists that workspace's meetings.
    - Once the user resolves it, Meeting Hub remembers the `sourceId` on that meeting
      (`external_ref`), so **future pushes for it auto-match** — no repeat review.
+4. **Every push is logged** (matched, matched-but-not-written, or pending) with the
+   body it carried, under **Settings → Ingest log**. That screen shows which meeting
+   each push landed on — flagging skipped or hidden-title meetings, which don't
+   appear on the day view — and lets the user re-associate the notes with a
+   different (or new) meeting. Re-association writes the notes from the log, so a
+   push that was dropped because the meeting already had notes is still
+   recoverable. A meeting the user re-associated (or resolved from the inbox)
+   carries `external_ref = sourceId`, and that explicit link wins over a
+   calendar-UID match on the next push.
 
 **Responses**
 

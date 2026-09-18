@@ -8,6 +8,7 @@ const links = [
   { href: "/settings/hidden", label: "Hidden meetings" },
   { href: "/settings/skipped", label: "Skipped meetings" },
   { href: "/settings/incoming", label: "Incoming notes" },
+  { href: "/settings/ingest-log", label: "Ingest log" },
   { href: "/settings/journal-stats", label: "Journal stats" },
   { href: "/settings/calendars", label: "Calendars" },
   { href: "/settings/drive", label: "Drive files" },
@@ -58,7 +59,11 @@ export function SettingsNav({
   }, []);
 
   const visibleLinks = links.filter(
-    (l) => !(hideIncoming && l.href === "/settings/incoming"),
+    (l) =>
+      !(
+        hideIncoming &&
+        (l.href === "/settings/incoming" || l.href === "/settings/ingest-log")
+      ),
   );
   const showAdvanced = aHeld || pathname === "/settings/advanced";
 

@@ -591,6 +591,49 @@ export const pendingIngests = pgTable("pending_ingests", {
     .defaultNow(),
 });
 
+// Append-only record of every /api/ingest push — what came in, which meeting
+// it landed on (or that it went to the inbox), and the pushed body itself so a
+// mis-filed push can be re-associated from Settings → Ingest log even when
+// the matched meeting already had notes and the body was never written.
+// meeting_id is the CURRENT association (updated on re-associate / review);
+// matched_meeting_id is where it landed at push time, kept for the record.
+// Deliberately global (no NOT NULL workspace), like pending_ingests.
+export const ingestOutcomeEnum = pgEnum("ingest_outcome", [
+  "matched_written",
+  "matched_not_written",
+  "pending",
+]);
+
+export const ingestEvents = pgTable(
+  "ingest_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: text("source_id").notNull(),
+    title: text("title"),
+    startTime: timestamp("start_time", { withTimezone: true }),
+    workspaceHint: text("workspace_hint"),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+      onDelete: "set null",
+    }),
+    notesGenerated: text("notes_generated").notNull(),
+    outcome: ingestOutcomeEnum("outcome").notNull(),
+    matchedMeetingId: uuid("matched_meeting_id").references(() => meetings.id, {
+      onDelete: "set null",
+    }),
+    meetingId: uuid("meeting_id").references(() => meetings.id, {
+      onDelete: "set null",
+    }),
+    reassignedAt: timestamp("reassigned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("ingest_events_created_at_idx").on(t.createdAt),
+    index("ingest_events_source_id_idx").on(t.sourceId),
+  ],
+);
+
 // ---- app_settings ----
 // Tiny key/value store for app-level preferences (the Advanced settings
 // toggles). Booleans are stored as "1"/"0".
@@ -931,6 +974,7 @@ export type NewMeeting = typeof meetings.$inferInsert;
 export type ActionItem = typeof actionItems.$inferSelect;
 export type NewActionItem = typeof actionItems.$inferInsert;
 export type PendingIngest = typeof pendingIngests.$inferSelect;
+export type IngestEvent = typeof ingestEvents.$inferSelect;
 export type JournalEntry = typeof journalEntries.$inferSelect;
 export type GoogleAccount = typeof googleAccounts.$inferSelect;
 export type JournalStat = typeof journalStats.$inferSelect;
