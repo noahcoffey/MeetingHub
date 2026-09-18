@@ -60,7 +60,7 @@ This file is the short, durable orientation for anyone (human or AI) working in 
   "Scheduled & snoozed" section), `reports/` (charts over journal meta, completed action items +
   meeting load), `summaries/` (weekly Sunday-Summary briefings, rendered read-only via
   `MarkdownView`; always in the nav — per-workspace enablement lives in the runner's config,
-  not an app toggle), and `settings/` (`security`, `incoming` notes review, `hidden` titles,
+  not an app toggle), and `settings/` (`security`, `incoming` notes review, `ingest-log` (see "Note ingest API"), `hidden` titles,
   `skipped` meetings, and a hidden `advanced` screen whose nav item only shows while holding "A" —
   its toggles hide all generated notes/Notes+ references incl. the Incoming screen, and anxiety
   (journal Meta scale, dashboard card, reports chart), backed by the `app_settings` key/value table
@@ -445,6 +445,21 @@ header carries the same **Move…** (shared `(app)/move-notes-picker.tsx`, seede
 day, excludes the source, disabled while an autosave is pending) for the case where the recorder
 filed Notes+ under the wrong meeting — on success it navigates to the target. Full
 contract for the client side: `INGEST_API.md`.
+**Ingest log** (`ingest_events`, append-only, one row per push incl. the pushed body): every
+`ingestGeneratedNotes` outcome is recorded — `matched_written`, `matched_not_written` (target already
+had notes; the body is otherwise dropped, so the log is the only copy), or `pending` —
+with `matched_meeting_id` (where it landed at push time) and `meeting_id` (the CURRENT association,
+updated by Incoming review, `moveGeneratedNotes` and re-association). Settings → Ingest log
+(`settings/ingest-log`, same hide-generated-notes gate as Incoming) lists the last 200 with the
+associated meeting flagged **Skipped** / **Hidden title** / workspace — the usual reasons a push
+"vanishes" — and a **Re-associate…** picker (workspace + date + meeting, or a new manual meeting)
+via `POST /api/ingest-events/[id]` → `reassociateIngestEvent[ToNew]` in `lib/ingest.ts`. That writes
+the body FROM THE LOG ROW onto the target (+ `external_ref` = sourceId), clears the old meeting's
+generated notes only if they still equal the pushed body, releases its `external_ref`, and deletes
+any inbox item for the sourceId. Durability: `ingestGeneratedNotes` orders
+`external_ref IS NOT DISTINCT FROM sourceId` first, so a human association always beats an
+incidental calendar-UID match (the old row keeps its `calendar_event_id`, and an ICS re-import bumps
+its `updated_at`). Tests: `tests/lib/ingest-log.test.ts`, `e2e/ingest-log.spec.ts`.
 
 ## MCP connector
 

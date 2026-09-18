@@ -33,6 +33,7 @@ const CONTENT_TABLES = [
   "journal_entries",
   "hidden_meeting_titles",
   "pending_ingests",
+  "ingest_events",
   "projects",
   "google_accounts",
   "workspaces",

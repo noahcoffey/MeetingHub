@@ -9,6 +9,7 @@ import {
   type NewMeeting,
 } from "@/db/schema";
 import { APP_TIMEZONE } from "./dates";
+import { repointLogRows } from "./ingest";
 
 // Meetings on the given calendar date (app tz), excluding skipped occurrences and
 // any whose title matches a "Hide" rule that was created on/before that date.
@@ -378,5 +379,6 @@ export async function moveGeneratedNotes(
       })
       .where(eq(meetings.id, fromId));
   });
+  await repointLogRows(fromId, toId);
   return { ok: true };
 }
